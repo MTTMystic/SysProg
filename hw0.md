@@ -91,32 +91,35 @@ Sizing up C types and their limits, `int` and `char` arrays, and incrementing po
 ```c
 // Your answer here
 ```
+As many bits as the computer’s architecture treats as a distinct group for memory addressing  purposes, usually 8 in modern machines
 
 2.  How many bytes are there in a `char`?
-
+1 byte
 ```c
 // Your answer here
 ```
 
 3.  How many bytes the following are on your machine? 
 
-* `int`: 
-* `double`: 
-* `float`:
-* `long`:
-* `long long`: 
+* `int`: 4
+* `double`: 8 
+* `float`: 4
+* `long`: 8
+* `long long`: 16 
 
 4.  On a machine with 8 byte integers, the declaration for the variable `data` is `int data[8]`. If the address of data is `0x7fbd9d40`, then what is the address of `data+2`?
 
 ```c
 // Your answer here
 ```
+data + 2 = 0x7fbd9d40 + 16
 
 5.  What is `data[3]` equivalent to in C? Hint: what does C convert `data[3]` to before dereferencing the address? Remember, the type of a string constant `abc` is an array.
 
 ```c
 // Your answer here
 ```
+data + 2 = 0x7fbd9d40 + 16
 
 6.  Why does this segfault?
 
@@ -125,29 +128,36 @@ char *ptr = "hello";
 *ptr = 'J';
 ```
 
+The character array is read-only after initialization, hence segfault when attempting to modify it
+
 7.  What does `sizeof("Hello\0World")` return?
+
 
 ```c
 // Your answer here
 ```
+5
 
 8.  What does `strlen("Hello\0World")` return?
 
 ```c
 // Your answer here
 ```
+4
 
 9.  Give an example of X such that `sizeof(X)` is 3.
 
 ```c
 // Your code here
 ```
+char * X = “hi”
 
 10. Give an example of Y such that `sizeof(Y)` might be 4 or 8 depending on the machine.
 
 ```c
 // Your code here
 ```
+int Y = 3
 
 ### Chapter 3
 
