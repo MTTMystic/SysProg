@@ -191,23 +191,24 @@ sizeof(ptr) is 8, because the argument is a pointer which has size 8 bytes on th
 Heap and stack memory, and working with structs
 
 1.  If I want to use data after the lifetime of the function it was created in ends, where should I put it? How do I put it there?
-
+	put it on the heap, using malloc
 2.  What are the differences between heap and stack memory?
-
+	Stack memory is allocated and freed automatically, but heap memory must be managed manually. The lifetime of variables created on the stack (automatic variables) finishes at the end of the function that created them, whereas heap memory remains allocated (and the data is secure against being overwritten) until it is explicitly freed.
 3.  Are there other kinds of memory in a process?
-
+	Yes. In addition to the stack and heap, processes will also have memory for environment variables, code, globals, and constants.
 4.  Fill in the blank: “In a good C program, for every malloc, there is a \_\_\_”.
-
+	free
 5.  What is one reason `malloc` can fail?
-
+	Not enough free memory remains on the heap to allocate more
 6.  What are some differences between `time()` and `ctime()`?
-
+	time() is a system call that returns the time in a special time_t format; it takes as an argument a pointer to a time_t variable to store the result in. ctime() is not a system call, takes the memory address of a time_t variable as its only argument, and returns the time in a human-readable string format (pointer to char array). 
 7.  What is wrong with this code snippet?
 
 ``` c
 free(ptr);
 free(ptr);
 ```
+The code attempts to free the same memory twice.
 
 8.  What is wrong with this code snippet?
 
@@ -215,21 +216,28 @@ free(ptr);
 free(ptr);
 printf("%s\n", ptr);
 ```
-
+The code attempts to access data on the heap after the memory has already been freed
 9.  How can one avoid the previous two mistakes?
-
+To avoid problems from freeing/accessing invalid memory, set the value of the pointer that initially pointed to the freed memory to be 'NULL'.
 
 10. Use the following space for the next four questions
 
 ```c
 // 10
+struct Person {
+	char * name;
+	int age;
+	struct (Person*)[] * friends;
+};
 
+typedef struct Person person_t;
 // 12
-
+	
 // 13
 
 int main() {
 // 11
+
 }
 ```
 
