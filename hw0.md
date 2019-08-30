@@ -24,7 +24,7 @@ In which our intrepid hero battles standard out, standard error, file descriptor
 ```c
 // Your code here
 ```
-
+write(1, “Hi! My name is Anastasia”, 24)
 2.  **Hello, Standard Error Stream!** Write a function to print out a triangle of height `n` to standard error. Your function should have the signature `void write_triangle(int n)` and should use `write()`. The triangle should look like this, for n = 3:
 
 ```
@@ -37,17 +37,44 @@ In which our intrepid hero battles standard out, standard error, file descriptor
 // Your code here
 ```
 
+void write_triangle(int n) {
+		int lineCnt;
+		for(lineCnt = 0; lineCnt < n; lineCnt++) {
+			int count;
+			for(count = 0; count <= lineCnt; count++) {
+				write(STDERR_FILENO, "*", 1);
+			}
+		
+		write(STDERR_FILENO, "\n", 1);
+		}
+}
+
 3.  **Writing to files** Take your program from “Hello, World!” modify it write to a file called `hello_world.txt`. Make sure to to use correct flags and a correct mode for `open()` (`man 2 open` is your friend).
 
 ```c
 // Your code here
 ```
+mode_t mode = S_IRUSR | S_IWUSR;
+	int hello_file = open("hello_world.txt", O_CREAT | O_RDWR, mode);
+	char * message = "Hi! My name is Anastasia";
+	write(hello_file, message, 24);
+	close(hello_file);
+4. close(1);
+	mode_t fileMode = S_IRUSR | S_IWUSR;
+	int file = open("hello_world.txt", O_CREAT | O_RDWR, fileMode);
+	printf("Hi! My name is Anastasia");
+	close(file);
+
 
 5. **Not everything is a system call** Take your program from “Writing to files” and replace `write()` with `printf()`. *Make sure to print to the file instead of standard out!*
 
 ```c
 // Your code here
 ```
+Differences between write and printf:
+Write is a system call, printf is not
+Printf allows for substitution of given values into a template, whereas write does not
+Write allows for direct control over the destination of the string, whereas printf prints to whatever stream is marked STDOUT
 
 6.  What are some differences between `write()` and `printf()`?
 
