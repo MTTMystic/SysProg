@@ -162,25 +162,30 @@ Program arguments, environment variables, and working with character arrays (str
 
 1.  What are two ways to find the length of `argv`?
 
+	Ways to find length of argv:
+		calculate sizeof(argv) / sizeof(argv[0])
+		check the value of argc
+
 2.  What does `argv[0]` represent?
-
+		the name of the program's executable
 3.  Where are the pointers to environment variables stored (on the stack, the heap, somewhere else)?
-
+	in the data segment
 4.  On a machine where pointers are 8 bytes, and with the following code:
 
     ``` c
     char *ptr = "Hello";
     char array[] = "Hello";
     ```
-
+	
     What are the values of `sizeof(ptr)` and `sizeof(array)`? Why?
 
 ```c
-// Your answer here
+sizeof(ptr) is 8, because the argument is a pointer which has size 8 bytes on the given machine. sizeof(array) is 6, because it has 5 characters (1 byte each)  plus the null terminator.
+
 ```
 
 5.  What data structure manages the lifetime of automatic variables?
-
+	 a stack
 ### Chapter 4
 
 Heap and stack memory, and working with structs
@@ -242,10 +247,14 @@ int main() {
 Text input and output and parsing using `getchar`, `gets`, and `getline`.
 
 1.  What functions can be used for getting characters from `stdin` and writing them to `stdout`?
-
+	* gets
+	* getchar
+	* puts
+	* printf
 2.  Name one issue with `gets()`.
-
+	If gets() reads more than 12 bytes, the memory allocated to its buffer will be insufficient and the buffer will overflow into parts of memory used for storing variables	 
 3.  Write code that parses the string “Hello 5 World” and initializes 3 variables to “Hello”, 5, and “World”.
+
 
 ```c
 // Your code here
