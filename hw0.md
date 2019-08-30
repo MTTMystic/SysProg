@@ -22,9 +22,9 @@ In which our intrepid hero battles standard out, standard error, file descriptor
 1.  **Hello, World! (system call style)** Write a program that uses `write()` to print out “Hi! My name is &lt;Your Name&gt;”.
 
 ```c
-// Your code here
-```
 write(1, “Hi! My name is Anastasia”, 24)
+```
+
 2.  **Hello, Standard Error Stream!** Write a function to print out a triangle of height `n` to standard error. Your function should have the signature `void write_triangle(int n)` and should use `write()`. The triangle should look like this, for n = 3:
 
 ```
@@ -35,51 +35,52 @@ write(1, “Hi! My name is Anastasia”, 24)
 
 ```c
 // Your code here
-```
-
 void write_triangle(int n) {
-		int lineCnt;
-		for(lineCnt = 0; lineCnt < n; lineCnt++) {
-			int count;
-			for(count = 0; count <= lineCnt; count++) {
-				write(STDERR_FILENO, "*", 1);
-			}
+	int lineCnt;
+	for(lineCnt = 0; lineCnt < n; lineCnt++) {
+		int count;
+		for(count = 0; count <= lineCnt; count++) {
+			write(STDERR_FILENO, "*", 1);
+		}
 		
 		write(STDERR_FILENO, "\n", 1);
-		}
+	}
 }
+```
+
+
 
 3.  **Writing to files** Take your program from “Hello, World!” modify it write to a file called `hello_world.txt`. Make sure to to use correct flags and a correct mode for `open()` (`man 2 open` is your friend).
 
 ```c
 // Your code here
-```
 mode_t mode = S_IRUSR | S_IWUSR;
-	int hello_file = open("hello_world.txt", O_CREAT | O_RDWR, mode);
-	char * message = "Hi! My name is Anastasia";
-	write(hello_file, message, 24);
-	close(hello_file);
-4. close(1);
+int hello_file = open("hello_world.txt", O_CREAT | O_RDWR, mode);
+char * message = "Hi! My name is Anastasia";
+write(hello_file, message, 24);
+close(hello_file);
+``` 
+
+
+4. **Not everything is a system call** Take your program from “Writing to files” and replace `write()` with `printf()`. *Make sure to print to the file instead of standard out!*
+
+```c
+	close(1);
 	mode_t fileMode = S_IRUSR | S_IWUSR;
 	int file = open("hello_world.txt", O_CREAT | O_RDWR, fileMode);
 	printf("Hi! My name is Anastasia");
 	close(file);
+```
 
 
-5. **Not everything is a system call** Take your program from “Writing to files” and replace `write()` with `printf()`. *Make sure to print to the file instead of standard out!*
+
+5.  What are some differences between `write()` and `printf()`?
 
 ```c
-// Your code here
-```
 Differences between write and printf:
 Write is a system call, printf is not
 Printf allows for substitution of given values into a template, whereas write does not
 Write allows for direct control over the destination of the string, whereas printf prints to whatever stream is marked STDOUT
-
-6.  What are some differences between `write()` and `printf()`?
-
-```c
-// Your code here
 ```
 
 ### Chapter 2
@@ -89,14 +90,14 @@ Sizing up C types and their limits, `int` and `char` arrays, and incrementing po
 1.  How many bits are there in a byte?
 
 ```c
-// Your answer here
+As many bits as the computer’s architecture treats as a distinct group for memory addressing  purposes, usually 8 in modern machines
 ```
 As many bits as the computer’s architecture treats as a distinct group for memory addressing  purposes, usually 8 in modern machines
 
 2.  How many bytes are there in a `char`?
 1 byte
 ```c
-// Your answer here
+1
 ```
 
 3.  How many bytes the following are on your machine? 
@@ -110,14 +111,14 @@ As many bits as the computer’s architecture treats as a distinct group for mem
 4.  On a machine with 8 byte integers, the declaration for the variable `data` is `int data[8]`. If the address of data is `0x7fbd9d40`, then what is the address of `data+2`?
 
 ```c
-// Your answer here
+data + 2 = 0x7fbd9d40 + 16
 ```
 data + 2 = 0x7fbd9d40 + 16
 
 5.  What is `data[3]` equivalent to in C? Hint: what does C convert `data[3]` to before dereferencing the address? Remember, the type of a string constant `abc` is an array.
 
 ```c
-// Your answer here
+data[3] = &(data + 3(8))
 ```
 data + 2 = 0x7fbd9d40 + 16
 
@@ -134,30 +135,26 @@ The character array is read-only after initialization, hence segfault when attem
 
 
 ```c
-// Your answer here
-```
 5
+```
 
 8.  What does `strlen("Hello\0World")` return?
 
 ```c
-// Your answer here
-```
 4
+```
+
 
 9.  Give an example of X such that `sizeof(X)` is 3.
 
 ```c
-// Your code here
-```
 char * X = “hi”
-
+```
 10. Give an example of Y such that `sizeof(Y)` might be 4 or 8 depending on the machine.
 
 ```c
-// Your code here
-```
 int Y = 3
+```
 
 ### Chapter 3
 
