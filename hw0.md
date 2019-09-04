@@ -232,12 +232,37 @@ struct Person {
 
 typedef struct Person person_t;
 // 12
+	person_t * create(char * name, int age) {
+	person_t * person = (person_t*)malloc(sizeof(person_t));
+	person->name = strdup(name);
+	person->age = age;
+	person->friends = malloc(sizeof(person_t*) * 10);
 	
+	return person;
+}
+
 // 13
+
+void destroy(person_t * person) {
+	free(person->name);
+	free(person->friends);
+	memset(person, 0, sizeof(person_t));
+	free(person);
+	
+}
 
 int main() {
 // 11
-
+	char * smith_name = "Agent Smith";
+	char * moore_name = "Sonny Moore";
+	
+	person_t * Agent_Smith = create(smith_name, 128);
+	person_t * Sonny_Moore = create(moore_name, 256);
+	
+	
+	destroy(Agent_Smith);
+	destroy(Sonny_Moore);
+	return 0;
 }
 ```
 
