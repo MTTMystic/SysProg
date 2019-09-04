@@ -7,7 +7,16 @@
 
 char **camel_caser(const char *input_str) {
     // TODO: Implement me!
+    if (!input_str) {
+        return NULL;
+    }
+
+    
     return NULL;
+}
+
+int count_sentences(const char * input_str) {
+
 }
 
 void destroy(char **result) {
