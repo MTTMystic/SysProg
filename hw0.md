@@ -290,7 +290,14 @@ Text input and output and parsing using `getchar`, `gets`, and `getline`.
 
 
 ```c
-// Your code here
+
+char * input = "Hello 5 World";
+
+char buffer[10] = "string1";
+int num = 0;
+char buffer_2[10] = "string2";
+
+sscanf(input, "%s %d %s", buffer, & num, buffer_2);
 ```
 
 4.  What does one need to define before including `getline()`?
@@ -307,28 +314,28 @@ These are general tips for compiling and developing using a compiler and git. So
 
 
 1.  What compiler flag is used to generate a debug build?
-
+-g
 
 2.  You fix a problem in the Makefile and type `make` again. Explain why this may be insufficient to generate a new build.
 
 
 3.  Are tabs or spaces used to indent the commands after the rule in a Makefile?
-
+	tabs
 
 4.  What does `git commit` do? What’s a `sha` in the context of git?
-
+	git commit creates a "snapshot" of the repository's state at the time of commit.
+	the "sha" is the unique ID given to each commit
 
 5.  What does `git log` show you?
-
+	git log lists commits to the repository with their SHA and commit message, in reverse chronological order.
 
 6.  What does `git status` tell you and how would the contents of `.gitignore` change its output?
-
+	
 
 7.  What does `git push` do? Why is it not just sufficient to commit with `git commit -m ’fixed all bugs’ `?
-
-
+	git push copies the local commits to the specified repository. Since local commits are not automatically sent to the remote repository, making a commit on the local repository will not change the state of files on the remote repository.
 8.  What does a non-fast-forward error `git push` reject mean? What is the most common way of dealing with this?
-
+	Pushes would be rejected with the non-fast-forward error if the remote repository is 'ahead' of the local repo by some number of other commits. The most common method to resolve this is to do a git pull, resolve any conflicts, and then try pushing again. 
 
 ### Optional: Just for fun
 
