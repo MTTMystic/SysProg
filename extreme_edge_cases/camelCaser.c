@@ -16,9 +16,9 @@ char **camel_caser(const char *input_str) {
     //sentence count + 1 gives # of elements for outer result array
     char ** result = malloc(sizeof(char *) * (sentence_count + 1));
     result[sentence_count] = NULL;
+
     allocate_sentence_memory(input_str, result);
 
-    
     int sentence_idx = 0; //which sentence are we at?
     int char_count = 0; //how many characters processed so far (in current sentence)?
     int char_idx = 0;     //which char (in input_str) are we at?
@@ -44,6 +44,7 @@ char **camel_caser(const char *input_str) {
             should_capitalize_next = 1; 
         }
 
+        //need to create new char variable, since c is from const argument and can't be changed
         char camel_cased_char = c;
 
         if (isalpha(c)) {
@@ -55,9 +56,6 @@ char **camel_caser(const char *input_str) {
             result[sentence_idx][char_count] = camel_cased_char;
             char_count++;
         }
-
-
-        
     }
     
     return result;
@@ -75,7 +73,7 @@ int count_sentences(const char * input_str) {
     return sentence_count;
 }
 
-void allocate_sentence_memory(const char * input_str, char ** result) {
+int allocate_sentence_memory(const char * input_str, char ** result) {
     int char_count = 0; 
     int sentence_idx = 0;
 
@@ -86,17 +84,26 @@ void allocate_sentence_memory(const char * input_str, char ** result) {
             result[sentence_idx][char_count] = '\0';
             char_count = 0;
             sentence_idx++;
-        } 
-
-        //do not count spaces as chars, since they will not be included in final result
-        if (!isspace(input_str[char_idx])) {
+        } //do not count spaces as chars, since they will not be included in final result
+        
+        else if (!isspace(input_str[char_idx])) {
             char_count++;
         }
-        
     }
+
+    return char_count > 0;
 }
 
 void destroy(char **result) {
     // TODO: Implement me!
+    size_t result_size = sizeof(result) / sizeof(char *);
+    size_t idx = 0;
+    for(; idx < result_size; idx++) {
+        free(result[idx]);
+        result[idx] = NULL;
+    }
+
+    free(result);
+    result = NULL;
     return;
 }

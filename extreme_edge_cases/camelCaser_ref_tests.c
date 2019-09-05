@@ -8,7 +8,7 @@
 
 int main() {
     // Enter the string you want to test with the reference here
-    char *input = "What, counts! as? punctuation: dude.";
+    char *input = "    .    ";
 
     // This function prints the reference implementation output on the terminal
     print_camelCaser(input);

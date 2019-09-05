@@ -9,13 +9,14 @@
 #include "camelCaser_tests.h"
 
 int main() {
-    char * example = "This is an example string. It has sentences. Wow";
+    char * example = " .";
     char ** camelCased = camel_caser(example);
-    //printf("the last value is %p", camelCased[2]);
+    printf("the first value is %s\n", camelCased[0]);
     // Feel free to add more test cases of your own!
-    /*if (test_camelCaser(&camel_caser, &destroy)) {
+
+    if (test_camelCaser(&camel_caser, &destroy)) {
         printf("SUCCESS\n");
     } else {
         printf("FAILED\n");
-    }*/
+    }
 }

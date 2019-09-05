@@ -14,7 +14,7 @@ int count_sentences(const char *input_str);
  * 1) counts characters in each sentence (marked by punctuation mark)
  * 2) allocates enough memory for each sentence and stores pointers to memory in result arr
 */
-void allocate_sentence_memory(const char * input_str, char ** result);
+int allocate_sentence_memory(const char * input_str, char ** result);
 
 /**
  * Takes an input string, and returns the camelCased output. Details on this

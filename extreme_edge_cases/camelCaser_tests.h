@@ -6,3 +6,5 @@
 
 int test_camelCaser(char **(*camelCaser)(const char *),
                     void (*destroy)(char **));
+
+int assert_equals(char ** actual_output, char * expectedOutput[]);
