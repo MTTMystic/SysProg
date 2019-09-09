@@ -69,6 +69,7 @@ int main() {
     printf("== two() ==\n");
     two();
 
+    
     printf("== three() ==\n");
     const int num1 = 3;
     const int num2 = 3;
@@ -76,7 +77,7 @@ int main() {
 
     const int num3 = 4;
     three(&num1, &num3);
-
+    
     printf("== four() ==\n");
     float *p_four;
     int i4 = 4, i432 = 432;
@@ -88,21 +89,28 @@ int main() {
     p_four = four(&i432);
     printf("%d == %f\n", i432, *p_four);
     free(p_four);
+    
 
     printf("== five() ==\n");
     const char s = 'S';
     five(&s);
     const char t = '_';
     five(&t);
+   
 
     printf("== six() ==\n");
     six("World!");
+    
+    
 
     printf("== seven() ==\n");
     seven();
 
+    
     printf("== eight() ==\n");
     eight(10);
+    
+  
 
     printf("== nine() ==\n");
     nine("red");
@@ -110,10 +118,12 @@ int main() {
     nine("blue");
     nine("green");
 
+    
     printf("== ten() ==\n");
     ten(35);
     ten(20);
 
+    
     printf("== clear_bits() ==\n");
     long int result;
 
@@ -135,12 +145,12 @@ int main() {
     result = clear_bits(0xBB, 0xBB);
     printf("%ld\n", result);
 
+
     printf("== little finite automata ==\n");
     printf("%d\n", little_automaton(transition_function_blue, "blue"));
     printf("%d\n", little_automaton(transition_function_blue, "orange"));
 
     printf("%d\n", little_automaton(transition_function_orange, "blue"));
     printf("%d\n", little_automaton(transition_function_orange, "orange"));
-
     return 0;
 }

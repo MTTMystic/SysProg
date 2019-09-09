@@ -21,11 +21,13 @@
  *     The grade to check.
  */
 void one(const char *grade) {
-    if (grade > 70)
-        printf("%f passed!\n", grade);
+    double parsed_grade = atof(grade);
+    if (parsed_grade> 70)
+        printf("%f passed!\n", parsed_grade);
     else
         printf("%s not passed!\n", grade);
 }
+
 
 /**
  * Have the integer pointer p point to the integer x which is on the stack.
@@ -33,10 +35,10 @@ void one(const char *grade) {
  */
 void two() {
     int x = 4;
-    int *p = x;
+    int *p = &x;
 
-    printf("The value of p is: %d\n", *p);
-}
+     printf("The value of p is: %d\n", *p);
+ }
 
 /**
  * Prints "x and y are equal." iff the values x and y point to are equal
@@ -50,7 +52,7 @@ void two() {
  *     Second input parameter.
  */
 void three(const int *x, const int *y) {
-    if (x == y)
+    if (*x == *y)
         printf("x and y are equal.\n");
     else
         printf("x and y are different.\n");
@@ -69,7 +71,8 @@ void three(const int *x, const int *y) {
  *     contains the value of the input parameter.
  */
 float *four(const int *x) {
-    float *p = *x;
+    float *p = malloc(sizeof(int));
+    *p = *x;
     return p;
 }
 
@@ -82,7 +85,9 @@ float *four(const int *x) {
  *
  */
 void five(const char *a) {
-    if (a >= 'A' && a <= 'z')
+    int uppercase = a[0] >= 'A' && a[0] <= 'Z';
+    int lowercase = a[0] >= 'a' && a[0] <= 'z';
+    if (uppercase || lowercase)
         printf("a is a letter.\n");
     else
         printf("a is not a letter.\n");
@@ -95,15 +100,18 @@ void five(const char *a) {
  */
 void six(const char *str) {
     char *s = "Hello ";
-    strcat(s, str);
-    printf("%s\n", s);
+    char * larger_s = malloc(sizeof(s) + sizeof(str) - 1);
+    strcpy(larger_s, s);
+    strcat(larger_s, str);
+    printf("%s\n", larger_s);
+    free(larger_s);
 }
 
 /**
  * Creates an array of values containing the values {0.0, 0.1, ..., 0.9}.
  */
 void seven() {
-    float *values;
+    float values[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
     int i, n = 10;
     for (i = 0; i < n; i++)
@@ -121,10 +129,13 @@ void eight(int a) {
     int **values;
 
     int i, j;
-    values = malloc(10 * sizeof(int));
-    for (i = 0; i < 10; i++)
-        for (j = 0; j < 10; j++)
-            values[i][j] = i * j * a;
+    values = malloc(10 * sizeof(int*));
+    for (i = 0; i < 10; i++) {
+        values[i] = malloc(10 * sizeof(int));
+        for (j = 0; j < 10; j++) {
+            values[i][j] = (i * j * a);
+        }
+    }
 
     for (i = 0; i < 10; i++)
         printf("%d ", values[i][i]);
@@ -142,19 +153,14 @@ void eight(int a) {
  *     Input parameter, used to determine which string is printed.
  */
 void nine(const char *s) {
-    switch (s) {
-    case "blue":
-        printf("Orange and BLUE!\n");
-        break;
-
-    case "orange":
+    if (!strcmp(s, "blue")) {
+         printf("Orange and BLUE!\n");
+    } else if (!strcmp(s, "orange")) {
         printf("ORANGE and blue!\n");
-        break;
-
-    default:
+    } else {
         printf("orange and blue!\n");
-        break;
     }
+    
 }
 
 /**
@@ -164,7 +170,7 @@ void nine(const char *s) {
  *     The diameter of the circle.
  */
 void ten(const int d) {
-    printf("The radius of the circle is: %f.\n", d / 2);
+    printf("The radius of the circle is: %f.\n", d / 2.0);
 }
 
 /**
@@ -192,6 +198,25 @@ void ten(const int d) {
  */
 long int clear_bits(long int value, long int flag) {
     // TODO clear_bits
+    size_t shift_idx = 0;
+    long int result = 0x0000;
+    while (shift_idx < sizeof(long int)) {
+        int value_bit = (value >> shift_idx) & 1;
+        int flag_bit = (flag >> shift_idx) & 1;
+        //printf("value bit is: %d \nflag bit is: %d\n", value_bit, flag_bit);
+        int set_bit = value_bit & (!flag_bit);
+        //printf("set bit value is: %d \n", set_bit);
+        int result_bit = (set_bit) ? 1 : 0;
+        //printf("result bit is: %d\n", result_bit);
+
+        int result_bit_mask = result_bit << shift_idx;
+        result |= result_bit_mask;
+        
+        //printf(".......\n");
+        shift_idx++;
+    }
+
+    return result;
 }
 
 /**
@@ -223,6 +248,10 @@ long int clear_bits(long int value, long int flag) {
 int little_automaton(int (*transition)(int, char), const char *input_string) {
     int state = 0;
     // put something here
-
+    size_t char_idx = 0;
+    while (input_string[char_idx] != '\0') {
+        state = transition(state, input_string[char_idx]);
+        char_idx++;
+    }
     return state;
 }
