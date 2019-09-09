@@ -8,13 +8,13 @@
 
 int main() {
     // Enter the string you want to test with the reference here
-    char *input = "    .    ";
+    char *input = "All? Punctuation! Is. Re\ncognized, See: Look;";
 
     // This function prints the reference implementation output on the terminal
     print_camelCaser(input);
 
     // Put your expected output for the given input above
-    char **output = NULL;
+    char ** output = NULL;
 
     // Compares the expected output you supplied with the reference output
     printf("check_output test: %d\n", check_output(input, output));

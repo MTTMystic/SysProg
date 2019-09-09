@@ -5,12 +5,10 @@
 #include "camelCaser.h"
 #include <stdlib.h>
 #include <ctype.h>
-
+#include <stdio.h>
 char **camel_caser(const char *input_str) {
     // TODO: Implement me!
-    if (!input_str) {
-        return NULL;
-    }
+   
 
     int sentence_count = count_sentences(input_str);
     //sentence count + 1 gives # of elements for outer result array
@@ -30,32 +28,33 @@ char **camel_caser(const char *input_str) {
         char c = input_str[char_idx];
         char_idx++;
         
+         //need to create new char variable, since c is from const argument and can't be changed
+        char camel_cased_char = c;
+        
         if (ispunct(c)) {
             sentence_idx++;
             char_count = 0;
             is_first_char = 1;
             should_capitalize_next = 0;
             continue; //skip all following code & go to next iteration
-        } 
+        } else if (isspace(c)) {
+            should_capitalize_next = 1;
+            continue;
+        }
         
         is_first_char = char_count == 0;
 
-        if (isspace(c)) {
-            should_capitalize_next = 1; 
-        }
-
-        //need to create new char variable, since c is from const argument and can't be changed
-        char camel_cased_char = c;
-
         if (isalpha(c)) {
             should_capitalize_next &= (!is_first_char);
-            camel_cased_char = should_capitalize_next ? toupper(c) : tolower(c); //using tolower removes capitals in wrong places
-
-            should_capitalize_next = 0;
-            is_first_char = 0;
-            result[sentence_idx][char_count] = camel_cased_char;
-            char_count++;
-        }
+            camel_cased_char = should_capitalize_next ? toupper(c) : tolower(c); //using tolower removes capitals in wrong place
+        } 
+        
+        putchar(camel_cased_char);
+        should_capitalize_next = 0;
+        is_first_char = 0;
+        result[sentence_idx][char_count] = camel_cased_char;
+        char_count++;
+        
     }
     
     return result;

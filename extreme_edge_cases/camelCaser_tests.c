@@ -13,19 +13,24 @@
 int assert_equals(char ** actual_output, char * expected_output[]) {
 
     size_t idx;
-    int success = 1; 
+    size_t actual_size = sizeof(*actual_output) / sizeof(char *);
+    size_t expected_size = sizeof(*expected_output) / sizeof(char *);
+
+    if (actual_size != expected_size) {
+        return 0;
+    }
+
     for (idx = 0; actual_output[idx] != NULL; idx++) {
         if (!strcmp(actual_output[idx], expected_output[idx])) {
             printf("Elements at idx %d match\n", (int) idx);
         } else {
             printf("Expected \"%s\" but result was \"%s\" \n", expected_output[idx], actual_output[idx]);
-            success = 0;
+            return 0;
         }
     }
 
-    success &= (actual_output[idx] == NULL);
+    return (actual_output[idx] == NULL);
 
-    return success;
 }
 
 int test_input(char **(*camelCaser)(const char *), void (*destroy)(char **),
@@ -48,13 +53,38 @@ int test_camelCaser(char **(*camelCaser)(const char *),
     // TODO: Return 1 if the passed in function works properly; 0 if it doesn't.
 
     int success = 0;
-    char * expected_0[] = {"all", "punctuation", "is", "recognized", NULL};
-    success = test_input(camelCaser, destroy, "All? Punctuation! Is. Recognized,", expected_0);
 
+    //test punctuation
+    char * expected_0[] = {"all", "punctuation", "is", "recognized", "see", "look", NULL};
 
     char * expected_1[] = {"", NULL};
-    success = test_input(camelCaser, destroy, "   .    ", expected_1);
 
+    char * expected_2[] = {"justACamelCasedSentence", NULL};
+
+    char * expected_3[] = {"", "nnnnnn103", NULL};
+
+    char * expected_4[] = {"theFunctionWorks", "givenMultipleMulti", "wordSentences", "asItOughtTo"};
+
+    success = test_input(camelCaser, destroy, "All? Punctuation! Is. Recognized, See: Look;", expected_0);
+
+    success &= test_input(camelCaser, destroy, "   .    ", expected_1);
+
+    success &= test_input(camelCaser, destroy, "", expected_1);
+
+    success &= test_input(camelCaser, destroy, ".", expected_1);
+    
+    
+    success &= test_input(camelCaser, destroy, "Just a camel cased sentence!", expected_2);
+
+    success &= test_input(camelCaser, destroy, " Just a camel cased sentence  .     ", expected_2);
+
+    success &= test_input(camelCaser, destroy, "jUST A Camel CASED sENTence.", expected_2);
+
+    success &= test_input(camelCaser, destroy, ".nnnnnn103!", expected_3);
+
+    success &= test_input(camelCaser, destroy, "The function works. Given multiple multi-word sentences. As it ought to.", expected_4);
+    
+    
     return success;
     
 }
