@@ -8,7 +8,7 @@
 
 int main() {
     // Enter the string you want to test with the reference here
-    char *input = "All? Punctuation! Is. Recognized, See: Lo\nok;;";
+    char *input = NULL;
 
     // This function prints the reference implementation output on the terminal
     print_camelCaser(input);

@@ -9,7 +9,10 @@
 char **camel_caser(const char *input_str) {
     // TODO: Implement me!
    
-
+    if (input_str == NULL) {
+        return NULL;
+    }
+    
     int sentence_count = count_sentences(input_str);
     //sentence count + 1 gives # of elements for outer result array
     char ** result = malloc(sizeof(char *) * (sentence_count + 1));
@@ -95,6 +98,10 @@ int allocate_sentence_memory(const char * input_str, char ** result) {
 
 void destroy(char **result) {
     // TODO: Implement me!
+    if (result == NULL) {
+        return;
+    }
+
     size_t result_size = sizeof(result) / sizeof(char *);
     size_t idx = 0;
     for(; idx < result_size; idx++) {

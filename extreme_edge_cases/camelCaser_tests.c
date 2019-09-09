@@ -59,6 +59,8 @@ int test_camelCaser(char **(*camelCaser)(const char *),
 
     char * expected_1[] = {"", NULL};
 
+    char * expected_1a[] = {"", "", NULL};
+
     char * expected_2[] = {"justACamelCasedSentence", NULL};
 
     char * expected_3[] = {"", "nnnnnn103", NULL};
@@ -67,7 +69,7 @@ int test_camelCaser(char **(*camelCaser)(const char *),
 
     success = test_input(camelCaser, destroy, "All? Punctuation! Is. Recognized, See: Lo\nok;", expected_0);
 
-    success &= test_input(camelCaser, destroy, "   .    ", expected_1);
+    success &= test_input(camelCaser, destroy, "   .    .", expected_1a);
 
     success &= test_input(camelCaser, destroy, "", expected_1);
 
@@ -83,7 +85,7 @@ int test_camelCaser(char **(*camelCaser)(const char *),
 
     success &= test_input(camelCaser, destroy, "The function works. Given multiple multi-word sentences. As it ought to.", expected_4);
     
-    
+    success &= camelCaser(NULL) == NULL;
     return success;
     
 }
