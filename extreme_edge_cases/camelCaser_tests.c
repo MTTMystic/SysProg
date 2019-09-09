@@ -22,9 +22,9 @@ int assert_equals(char ** actual_output, char * expected_output[]) {
 
     for (idx = 0; actual_output[idx] != NULL; idx++) {
         if (!strcmp(actual_output[idx], expected_output[idx])) {
-            printf("Elements at idx %d match\n", (int) idx);
+            //printf("Elements at idx %d match\n", (int) idx);
         } else {
-            printf("Expected \"%s\" but result was \"%s\" \n", expected_output[idx], actual_output[idx]);
+            //printf("Expected \"%s\" but result was \"%s\" \n", expected_output[idx], actual_output[idx]);
             return 0;
         }
     }
@@ -55,7 +55,7 @@ int test_camelCaser(char **(*camelCaser)(const char *),
     int success = 0;
 
     //test punctuation
-    char * expected_0[] = {"all", "punctuation", "is", "recognized", "see", "look", NULL};
+    char * expected_0[] = {"all", "punctuation", "is", "recognized", "see", "loOk", NULL};
 
     char * expected_1[] = {"", NULL};
 
@@ -65,14 +65,13 @@ int test_camelCaser(char **(*camelCaser)(const char *),
 
     char * expected_4[] = {"theFunctionWorks", "givenMultipleMulti", "wordSentences", "asItOughtTo"};
 
-    success = test_input(camelCaser, destroy, "All? Punctuation! Is. Recognized, See: Look;", expected_0);
+    success = test_input(camelCaser, destroy, "All? Punctuation! Is. Recognized, See: Lo\nok;", expected_0);
 
     success &= test_input(camelCaser, destroy, "   .    ", expected_1);
 
     success &= test_input(camelCaser, destroy, "", expected_1);
 
     success &= test_input(camelCaser, destroy, ".", expected_1);
-    
     
     success &= test_input(camelCaser, destroy, "Just a camel cased sentence!", expected_2);
 

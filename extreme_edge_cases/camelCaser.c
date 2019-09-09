@@ -49,7 +49,7 @@ char **camel_caser(const char *input_str) {
             camel_cased_char = should_capitalize_next ? toupper(c) : tolower(c); //using tolower removes capitals in wrong place
         } 
         
-        putchar(camel_cased_char);
+        //putchar(camel_cased_char);
         should_capitalize_next = 0;
         is_first_char = 0;
         result[sentence_idx][char_count] = camel_cased_char;
