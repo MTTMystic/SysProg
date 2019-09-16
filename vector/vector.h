@@ -216,6 +216,7 @@ void *vector_get(vector *this, size_t n);
  *
  * Calling this function on an empty container causes undefined behavior.
  *
+ * 
  * http://www.cplusplus.com/reference/vector/vector/front/
  */
 void **vector_front(vector *this);
