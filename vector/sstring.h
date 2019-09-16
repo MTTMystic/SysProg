@@ -8,6 +8,7 @@
  */
 
 #include "vector.h"
+
 #pragma once
 /**
  * C is notorious for having relatively annoying string manipulation interfaces
@@ -113,3 +114,4 @@ char *sstring_slice(sstring *this, int start, int end);
  * shall be a valid sstring allocated on the heap.
  */
 void sstring_destroy(sstring *this);
+

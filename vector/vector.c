@@ -4,7 +4,7 @@
  */
 #include "vector.h"
 #include <assert.h>
-#include <stdio.h>
+
 /**
  * 'INITIAL_CAPACITY' the initial size of the dynamically.
  */
@@ -246,8 +246,9 @@ void vector_reserve(vector *this, size_t n) {
         return;
     }
 
-    //resize vector otherwise
-    resize_upgrade_capacity(this, n);
+   int new_capacity = get_new_capacity(n);
+   this->array = realloc(this->array, new_capacity);
+   this->capacity = new_capacity;
 }
 
 void **vector_at(vector *this, size_t position) {
