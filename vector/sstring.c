@@ -134,4 +134,7 @@ char *sstring_slice(sstring *this, int start, int end) {
 
 void sstring_destroy(sstring *this) {
     // your code goes here
+    vector_destroy(this->string);
+    free(this);
+    this = NULL;
 }
