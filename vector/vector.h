@@ -110,17 +110,16 @@ void **vector_end(vector *this);
  * This is the number of actual objects held in the 'vector',
  * which is not necessarily equal to its storage capacity.
  *
- * http://www.cplusplus.com/reference/vector/vector/size/
+ * http://www.cplusplus.com/ation of the allocated storage space takes place.
+ *
+ * Notice that this function changes the actual content of the container by
+ * inserting or erasing elements from it.
+ *reference/vector/vector/size/
  */
 size_t vector_size(vector *this);
 
 /**
- * Resizes the container so that it contains 'n' elements.
- *
- * If 'n' is smaller than the current container size,
- * the content is reduced to its first n elements,
- * removing those beyond (and destroying them).
- *
+ * If 'n' is smaller than the curr
  * If 'n' is greater than the current container size, the content is expanded by
  * inserting at the end as many elements as needed to reach a size of n.  These
  * new elements are created using the user defined default-constructor.
@@ -173,10 +172,17 @@ bool vector_empty(vector *this);
  * In all other cases,
  * the function call does not cause a reallocation and the vector capacity is
  * not affected.
-
- * This function has no effect on the vector size and cannot alter its elements.
+ation of the allocated storage space takes place.
  *
- * http://www.cplusplus.com/reference/vector/vector/reserve/
+ * Notice that this function changes the actual content of the container by
+ * inserting or erasing elements from it.
+ *ct on the vector size and cannot alter its elements.
+ *
+ * http://www.cpluspluation of the allocated storage space takes place.
+ *
+ * Notice that this function changes the actual content of the container by
+ * inserting or erasing elements from it.
+ *s.com/reference/vector/vector/reserve/
  */
 void vector_reserve(vector *this, size_t n);
 
