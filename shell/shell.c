@@ -13,7 +13,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
-
+#include <errno.h>
 typedef struct process {
     char *command;
     pid_t pid;
@@ -24,8 +24,13 @@ static char * history_file_name;
 static char * history_fp;
 static FILE * history_file;
 
+static char * script_file_name;
+static char * script_fp;
+static FILE * script_file;
 
-
+/**
+ * Reads command history from file (if it wasn't created by shell) and stores in internal vector.
+ */ 
 void initialize_history_from_file() {
     history_file = fopen(history_file_name, "r");
     char line[1024];
@@ -36,6 +41,11 @@ void initialize_history_from_file() {
     fclose(history_file);
 }
 
+/**
+ * 1) Establishes file at given filepath as program history file.
+ * 2) If the file exists, copy its value to internal history record.
+ * 3) If the file does not exist, create the file.
+ */
 void check_history_file(char * opt_arg) {
     if (opt_arg && !history_file_name) {
         history_file_name = strdup(opt_arg); //must duplicate optarg b/c it changes on getopt call
@@ -47,9 +57,33 @@ void check_history_file(char * opt_arg) {
     if (file_exists) {
         initialize_history_from_file();
     } else {
+        print_history_file_error();
         history_file = fopen(history_file_name, "w"); //open the history file in write mode to create it
+        if (!history_file) {
+            perror("Error creating history file.");
+            exit(1);
+        }
         fclose(history_file);
     }
+}
+
+/**
+ * Verifies that the file at the given path exists.
+ * Establishes it as instruction queue and does set-up for execution 
+ */
+void check_script_file(char * opt_arg) {
+    if (opt_arg && !script_file_name) {
+        script_file_name = strdup(opt_arg);
+        script_fp = get_full_path(script_file_name);
+    }
+
+    int file_exists = script_file_name && (access(script_file_name, R_OK) != -1);
+    if (!file_exists) {
+        print_script_file_error();
+        exit(1);
+    }
+    
+
 }
 /**
  * Checks for + handles optional args in initial shell call
@@ -63,6 +97,12 @@ void parse_options(int argc, char * argv[]) {
             case 'h':
                 check_history_file(optarg);
                 break;
+            case 'f':
+                check_script_file(optarg);
+                break;
+            default:
+                print_usage();
+                exit(1);
         }
     }
 }
@@ -75,8 +115,10 @@ void record_command(char * command) {
     vector_push_back(history, command);
     if (history_file_name) {
         history_file = fopen(history_fp, "a");
-        fprintf(history_file, "%s\n", command);
-        fclose(history_file);
+        if (history_file) {
+            fprintf(history_file, "%s\n", command);
+            fclose(history_file);
+        }
     }
 }
 
@@ -150,35 +192,51 @@ void exec_command(char * command) {
 }
 
 
+void main_loop() {
+    if (script_file_name) {
+        script_file = fopen(script_fp, "r");
+        if (!script_file) {
+            print_script_file_error();
+            exit(1);
+        }
 
+        FILE * command_src = script_file ? script_file : stdin;
+
+        pid_t shell_pid  = getpid();
+        char cwd[1024];
+        char line[1024];
+        while (1) {
+            
+            if (getcwd(cwd, sizeof(cwd)) != NULL) {
+                print_prompt(cwd, shell_pid);
+            }
+
+            if (!fgets(line, sizeof(line), command_src)) {
+                break; //TODO: cleanup functions
+            }
+
+            char * final_char = strchr(line, '\n');
+            if (final_char) {
+                *final_char = '\0';
+            }
+
+            if (command_src == script_file) {
+                print_command(line);
+            }
+
+            exec_command(line);
+
+
+        }
+
+        fclose(script_file);
+    }
+}
 int shell(int argc, char *argv[]) {
     history = string_vector_create();
     parse_options(argc, argv);
 
-    // TODO: This is the entry point for your shell.
-    pid_t outer_pid = getpid();
-    char cwd[1024]; //enforce char limit on path
-    char line[1024];
-    //size_t char_limit = 1024;
-    while (1) {
-        if (getcwd(cwd, sizeof(cwd)) != NULL) {
-            print_prompt(cwd, outer_pid);
-        }
+    main_loop();
 
-        
-        if (!fgets(line, sizeof(line), stdin)) {
-            break;
-        };
-
-        //terminate command with \0 to make it proper c-string
-        char * final_char = strchr(line, '\n');
-        if (final_char) {
-            *final_char = '\0';
-        }
-        
-        exec_command(line);
-
-        break;
-    }   
     return 0;
 }
