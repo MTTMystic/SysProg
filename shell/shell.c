@@ -206,6 +206,7 @@ char ** parse_command(char * command) {
 
 void exec_command(char ** command_argv, int argc) {
     int background = argc >= 2 && !strcmp(command_argv[argc - 1], "&");
+    background ||= command_argv[0][0] == '&';
     //delete the & character so exec doesn't treat it as an argument
     if (background) {
         command_argv[argc - 1] = NULL;
@@ -220,6 +221,13 @@ void exec_command(char ** command_argv, int argc) {
     } else if (child_pid == 0) {
         //child process
         pid_t my_pid = getpid();
+
+        if (background) {
+            if (setpgid(my_pid, my_pid) == -1) {
+                print_setpgid_failed();
+                exit(EXIT_FAILURE);
+            };
+        }
         print_command_executed(my_pid); //command exec'd by <pid>
         execvp(command_argv[0], command_argv);
         print_exec_failed(command_argv[0]); //exec failed if this code is reached
