@@ -26,17 +26,6 @@ void insert_node(meta_data * meta_ptr, size_t request_size, const char * filenam
     head = meta_ptr;
 }
 
-meta_data * find_node(void * payload) {
-    meta_data * current_node = head;
-
-    while (current_node) {
-         void * linked_memory = ((void *) current_node) + sizeof(meta_data);
-         if (linked_memory == payload) return current_node;
-    }
-
-    return NULL;
-}
-
 /**Helper function to free memory and remove metadata node.
  * Payload supposedly matches ptr returned by malloc et al.
  * Metadata should be just before payload (meta_addr = payload - sizeof(meta_data))
@@ -134,7 +123,55 @@ void *mini_realloc(void *payload, size_t request_size, const char *filename,
         return mini_malloc(request_size, filename, instruction);
     }
 
-    
+    meta_data * prev_node = NULL;
+    meta_data * next_node = NULL;
+    meta_data * current_node = head;
+
+    while (current_node) {
+       
+        //go to block of requested memory per above formula
+        void * linked_memory = ((void *) current_node) + sizeof(meta_data);
+
+         //set next node ahead of removal
+        next_node = current_node->next;
+
+        //compare linked mem to payload
+        if (payload == linked_memory) {
+            
+            size_t original_request_size = current_node->request_size;
+
+            //removing a block from a linked list:
+            //prev_node will point to next_node
+            //if there is no prev_node current_node must be head, so change head
+            if (!prev_node) {
+                head = next_node;
+            } else {
+                prev_node->next = next_node;
+            }
+            
+            void * memory = realloc(current_node, request_size + sizeof(meta_data));
+            if (!memory) return NULL;
+
+            if (original_request_size <= request_size) {
+                total_memory_requested += (request_size - original_request_size);
+            } else {
+                total_memory_freed += (original_request_size - request_size); 
+            }
+
+            meta_data * meta_d = (meta_data *) memory;
+            void * requested_memory = memory + sizeof(meta_data);
+
+            insert_node(meta_d, request_size, filename, instruction);
+
+            return requested_memory;
+        }
+
+        prev_node = current_node;
+        current_node = next_node;
+    }
+
+    invalid_addresses++; //if this code is reached, the given ptr wasn't returned by malloc et al.
+    return NULL;
 
 }
 

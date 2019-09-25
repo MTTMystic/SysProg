@@ -35,5 +35,9 @@ int main() {
     }
     
     free(basic_calloc);
+    
+    void * small_malloc = malloc(10);
+    small_malloc = realloc(small_malloc, 11);
+    free(small_malloc);
     return 0;
 }
