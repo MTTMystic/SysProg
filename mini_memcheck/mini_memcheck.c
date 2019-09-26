@@ -79,15 +79,14 @@ void *mini_malloc(size_t request_size, const char *filename,
     if (!request_size) return NULL; //consider request for 0 bytes invalid
 
     size_t bytes_needed = request_size + sizeof(meta_data); //requested bytes + metadata overhead
-    void * memory_block = malloc(bytes_needed); 
+    meta_data * memory_block = (meta_data *) malloc(bytes_needed); 
 
     if (!memory_block) return NULL; //if malloc failed
     
-    meta_data * meta_d = (meta_data *) memory_block; //for linked list insertion
-    void * requested_memory = memory_block + sizeof(meta_data); //actual return value
+    void * requested_memory = (void *) memory_block + sizeof(meta_data); //actual return value
 
     //using helper function to add node to linked list
-    insert_node(meta_d, request_size, filename, instruction);
+    insert_node(memory_block, request_size, filename, instruction);
     //ignore metadata overhead for mem requests
     total_memory_requested += request_size;
 
@@ -106,7 +105,7 @@ void *mini_calloc(size_t num_elements, size_t element_size,
     if (!memory_block) return NULL;
 
     //initializing each element to zero
-    memset(memory_block, 0, sizeof(memory_block));
+    memset(memory_block, 0, bytes_needed - sizeof(meta_data));
 
     return memory_block;
 }
@@ -149,7 +148,7 @@ void *mini_realloc(void *payload, size_t request_size, const char *filename,
                 prev_node->next = next_node;
             }
             
-            void * memory = realloc(current_node, request_size + sizeof(meta_data));
+            meta_data *  memory = (meta_data *) realloc(current_node, request_size + sizeof(meta_data));
             if (!memory) return NULL;
 
             if (original_request_size <= request_size) {
@@ -158,10 +157,9 @@ void *mini_realloc(void *payload, size_t request_size, const char *filename,
                 total_memory_freed += (original_request_size - request_size); 
             }
 
-            meta_data * meta_d = (meta_data *) memory;
-            void * requested_memory = memory + sizeof(meta_data);
+            void * requested_memory = (void *) memory + sizeof(meta_data);
 
-            insert_node(meta_d, request_size, filename, instruction);
+            insert_node(memory, request_size, filename, instruction);
 
             return requested_memory;
         }

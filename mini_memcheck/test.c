@@ -28,16 +28,11 @@ int main() {
     
     //calloc 4 elems
     void * basic_calloc = calloc(4, 4);
-    int idx = 0;
-    for (; idx < 4; idx++) {
-        int * current_elem = (int *) (basic_calloc + (idx * 4));
-        assert(*current_elem == 0);
-    }
-    
     free(basic_calloc);
     
     void * small_malloc = malloc(10);
     small_malloc = realloc(small_malloc, 11);
     free(small_malloc);
+
     return 0;
 }
