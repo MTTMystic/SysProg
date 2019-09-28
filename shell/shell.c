@@ -141,6 +141,8 @@ void parse_options(int argc, char * argv[]) {
  * TODO: add toggle for writing to file versus only storing in vector
 */
 void record_command(char * command) {
+    int print = command[0] != '!' && command[0] != '#';
+    if (!print) return;
     vector_push_back(history, command);
     if (history_file_name) {
         history_file = fopen(history_fp, "a");
@@ -199,7 +201,6 @@ char ** parse_command(char * command) {
     command_args[arg_count] = NULL; 
 
     sstring_destroy(command_wrapper);
-    vector_destroy(args);
     return command_args;
 }
 
@@ -262,6 +263,7 @@ void exec_command_helper(char ** command_argv, int argc, int * status_addr) {
 void exec_command(char ** command_argv, int argc) {
     exec_command_helper(command_argv, argc, NULL);
 }
+
 void exec_cd(char ** command_argv, int argc) {
     if (argc < 2) {
         print_no_directory("");
@@ -402,8 +404,9 @@ void logical_operator_controller(char ** command_argv, int operator_idx) {
     }
 
     free(first_command_argv);
+    first_command_argv = NULL;
     free(second_command_argv);
-    free(command_argv);
+    second_command_argv = NULL;
 }
 
 void command_controller(char * command) {
@@ -411,17 +414,16 @@ void command_controller(char * command) {
     char ** command_argv = parse_command(command);
     char * program_name = command_argv[0];
 
-    int not_print = program_name[0] == '!' || program_name[0] == '#';
-    if (!not_print) record_command(command);
+    int argc = get_argc(command_argv);
+    
+    record_command(command);
 
     int operator_idx = logical_operator_idx(command_argv);
-    if (operator_idx > -1) {
+    if (operator_idx != -1) {
+        //printf("branch logic controller\n");
         logical_operator_controller(command_argv, operator_idx);
-        return;
-    }
-    
-    int argc = get_argc(command_argv);
-    if (!strcmp(program_name, "cd")) {
+    } else if (!strcmp(program_name, "cd")) {
+        //printf("exec cd\n");
         exec_cd(command_argv, argc);
     } else if (!strcmp(program_name, "!history")) {
         list_history();
@@ -436,6 +438,7 @@ void command_controller(char * command) {
     }
     
     free(command_argv);
+    command_argv = NULL;
 }
 
 void main_loop() {
