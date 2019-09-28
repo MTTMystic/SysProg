@@ -175,27 +175,46 @@ size_t get_argc(char ** argv) {
 
     return argc;
 }
+
 /**
  * Given a string 'command', separate it into distinct arguments and place in string array
  */
 char ** parse_command(char * command) {
     sstring * command_wrapper = cstr_to_sstring(command); //wrap command as sstring to use split
+    
     vector *  args = sstring_split(command_wrapper, ' '); //separate by spaces
     trim_args(args);    //remove empty strings created by split on whitespace
 
     size_t arg_count = vector_size(args);
 
-    size_t bytes_needed = sizeof(char *) * arg_count;
+    size_t bytes_needed = sizeof(char *) * (arg_count + 1);
 
-    char ** command_args = malloc(bytes_needed + sizeof(void *));  
+    char ** command_args = malloc(bytes_needed);  
     
     size_t arg_idx = 0;
     for (; arg_idx < arg_count; arg_idx++) {
         command_args[arg_idx] = vector_get(args, arg_idx);
     }
-    command_args[arg_count + 1] = NULL; 
-    
+
+    command_args[arg_count] = NULL; 
+
+    sstring_destroy(command_wrapper);
+    vector_destroy(args);
     return command_args;
+}
+
+
+int logical_operator_idx(char ** command_argv) {
+    size_t idx = 0;
+    for (; idx < get_argc(command_argv); idx++) {
+        char * current = command_argv[idx];
+        int operator = !strcmp(current, "&&") || !strcmp(current, "||") || !strcmp(current, ";");
+        if (operator) {
+            return idx;
+        }
+    }
+
+    return -1;
 }
 
 /**
@@ -204,9 +223,9 @@ char ** parse_command(char * command) {
  * TODO: add support for backgrounding
  */ 
 
-void exec_command(char ** command_argv, int argc) {
+void exec_command_helper(char ** command_argv, int argc, int * status_addr) {
     int background = argc >= 2 && !strcmp(command_argv[argc - 1], "&");
-    background ||= command_argv[0][0] == '&';
+    background = background || command_argv[0][0] == '&';
     //delete the & character so exec doesn't treat it as an argument
     if (background) {
         command_argv[argc - 1] = NULL;
@@ -233,12 +252,16 @@ void exec_command(char ** command_argv, int argc) {
         print_exec_failed(command_argv[0]); //exec failed if this code is reached
         close_shell_err
     } else if (!background) {
-         int status;
-         waitpid(child_pid, &status, 0);
+         int child_status;
+         int * status_arg = status_addr ? status_addr : &child_status;
+         waitpid(child_pid, status_arg, 0);
     }
     
 }
 
+void exec_command(char ** command_argv, int argc) {
+    exec_command_helper(command_argv, argc, NULL);
+}
 void exec_cd(char ** command_argv, int argc) {
     if (argc < 2) {
         print_no_directory("");
@@ -303,14 +326,101 @@ void search_by_prefix(const char * command) {
     }
 }
 
-void command_controller(char * command) {
-    char ** command_argv = parse_command(command);
+void logical_operator_helper(char ** command_argv, int * status_addr) {
+    if (!command_argv) {
+       *status_addr = EXIT_FAILURE;
+       return;
+    }
+
     char * program_name = command_argv[0];
     int argc = get_argc(command_argv);
+
+    //printf("program name is %s\n", program_name);
+    if (!strcmp(program_name, "cd")) {
+        exec_cd(command_argv, argc);
+    } else {
+        exec_command_helper(command_argv, argc, status_addr);
+    }
+}
+
+/**Execute the && operator on two given commands.
+ * Behavior: run the first command. If it exited successfully, run the second command.
+ * Otherwise, short-circuit
+ */ 
+void exec_and(char ** first_command_argv, char ** second_command_argv) {
+    int status = -1;
+    logical_operator_helper(first_command_argv, &status);
+    int short_circuit = (status != -1) && WIFEXITED(status) && WEXITSTATUS(status);
+    if (!short_circuit) {
+         logical_operator_helper(second_command_argv, &status);
+    }
+}
+
+void exec_or(char ** first_command_argv, char ** second_command_argv) {
+    int status = -1;
+    logical_operator_helper(first_command_argv, &status);
+    int short_circuit = (status != -1) && WIFEXITED(status) && WEXITSTATUS(status);
+    if (short_circuit) {
+         logical_operator_helper(second_command_argv, &status);
+    }
+}
+
+void exec_separated(char ** first_command_argv, char ** second_command_argv) {
+    logical_operator_helper(first_command_argv, NULL);
+    logical_operator_helper(second_command_argv, NULL);
+}
+
+void logical_operator_controller(char ** command_argv, int operator_idx) {
+    int argc = get_argc(command_argv);
+    //remember that extra NULL element terminates argv for shell commands
+    size_t bytes_needed = sizeof(char *) * (operator_idx + 1); //bytes needed for first command
+
+    char ** first_command_argv = calloc(bytes_needed, (operator_idx + 1)); //zero-out memory
+
+    bytes_needed = sizeof(char * ) * (argc - operator_idx); //
+    char ** second_command_argv = calloc(bytes_needed, argc - operator_idx); //zero-out memory
+
+    int idx = 0;
+    for (; idx < operator_idx; idx++) {
+        first_command_argv[idx] = command_argv[idx];
+    }
+
+    int offset = operator_idx + 1;
+    for (idx = offset; idx < (int) get_argc(command_argv); idx++) {
+        second_command_argv[idx - offset] = command_argv[idx];
+        //printf("%s\n", second_command_argv[idx - offset]);
+    }
+
+    char * operator = command_argv[operator_idx];
+    if (!strcmp(operator, "&&")) {
+        //printf("executing and\n");
+        exec_and(first_command_argv, second_command_argv);
+    } else if (!strcmp(operator, "||")) {
+        exec_or(first_command_argv, second_command_argv);
+    } else if (!strcmp(operator, ";")) {
+        exec_separated(first_command_argv, second_command_argv);
+    }
+
+    free(first_command_argv);
+    free(second_command_argv);
+    free(command_argv);
+}
+
+void command_controller(char * command) {
+  
+    char ** command_argv = parse_command(command);
+    char * program_name = command_argv[0];
 
     int not_print = program_name[0] == '!' || program_name[0] == '#';
     if (!not_print) record_command(command);
 
+    int operator_idx = logical_operator_idx(command_argv);
+    if (operator_idx > -1) {
+        logical_operator_controller(command_argv, operator_idx);
+        return;
+    }
+    
+    int argc = get_argc(command_argv);
     if (!strcmp(program_name, "cd")) {
         exec_cd(command_argv, argc);
     } else if (!strcmp(program_name, "!history")) {
@@ -325,10 +435,10 @@ void command_controller(char * command) {
         exec_command(command_argv, argc);
     }
     
+    free(command_argv);
 }
 
 void main_loop() {
-    printf("in main loop\n");
     if (script_file_name) {
         script_file = fopen(script_fp, "r");
         if (!script_file) {
@@ -337,7 +447,6 @@ void main_loop() {
         }
 
     }
-        printf("past script file check\n");
         FILE * command_src = script_file ? script_file : stdin;
 
         pid_t shell_pid  = getpid();
