@@ -15,10 +15,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
+#include <time.h>
 
 typedef struct process {
     char *command;
     pid_t pid;
+    struct tm * start;
+    clock_t exec_time;
 } process;
 
 static vector * history = NULL;
@@ -30,6 +33,7 @@ static char * script_file_name = NULL;
 static char * script_fp = NULL;
 static FILE * script_file = NULL;
 
+static vector * processes = NULL;
 #define close_shell_err cleanup(); exit(EXIT_FAILURE);
 #define close_shell cleanup(); exit(EXIT_SUCCESS);
 
@@ -482,6 +486,43 @@ void main_loop() {
 
     fclose(script_file);
 }
+
+void track_process_shell(int argc, char * argv[]) {
+    int idx = 0;
+    size_t bytes_needed = 0;
+    for (; idx < argc; idx++) {
+        if (idx < argc - 1) {
+            bytes_needed += 1;
+        }
+        bytes_needed += strlen(argv[idx]);
+    }
+
+    bytes_needed += 1;
+
+    //leverage sizeof(char) == 1?
+    char * original_command = calloc(bytes_needed, bytes_needed);
+
+    for (idx = 0; idx < argc; idx++) {
+        original_command = strcat(original_command, argv[idx]);
+        if (idx < argc - 1) {
+            original_command[strlen(original_command)] = ' '; 
+        }    
+    }
+
+    original_command[strlen(original_command)] = '\0';
+
+    pid_t shell_pid = getpid();
+    process * shell_process = malloc(sizeof(process));
+
+    time_t start = time(NULL);
+    shell_process->pid = shell_pid;
+    shell_process->command = original_command;
+    shell_process->start = localtime(&start);
+    shell_process->exec_time = clock();
+
+}
+
+
 int shell(int argc, char *argv[]) {
 
     signal(SIGINT, sig_handler);
@@ -490,6 +531,9 @@ int shell(int argc, char *argv[]) {
     history = string_vector_create();
     parse_options(argc, argv);
 
+    track_process_shell(argc, argv);
+    processes = vector_create(NULL, NULL, NULL);
+    
     main_loop();
 
     return 0;
