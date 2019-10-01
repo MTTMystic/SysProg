@@ -18,12 +18,25 @@
 #include <time.h>
 
 typedef struct process {
-    char *command;
     pid_t pid;
-    struct tm * start;
-    clock_t exec_time;
+    long int nthreads;
+    unsigned long int vsize;
+    char state;
+    char * start_str;
+    char * time_str;
+    char *command;
+    clock_t exec_start;
 } process;
 
+/*
+int pid;
+    long int nthreads;
+    unsigned long int vsize;
+    char state;
+    char *start_str;
+    char *time_str;
+    char *command;
+*/
 static vector * history = NULL;
 static char * history_file_name = NULL;
 static char * history_fp = NULL;
@@ -42,7 +55,22 @@ void cleanup() {
     while (waitpid((pid_t) (-1), 0, WNOHANG) > 0);
     
     vector_destroy(history);
-
+    size_t idx = 0;
+    
+    if (processes) {
+        for (; idx < vector_size(processes); idx++) {
+            process * process = vector_get(processes, idx);
+            if (process) {
+                free(process->start_str);
+                free(process->time_str);
+                free(process);
+            } 
+        }
+        
+        vector_destroy(processes);
+    }
+    
+    
     if (history_fp) {
         free(history_fp);
     }
@@ -50,6 +78,8 @@ void cleanup() {
     if (script_fp) {
         free(script_fp);
     }
+
+    
 }
 
 void sig_handler(int signal) {
@@ -65,6 +95,7 @@ void sig_handler(int signal) {
 }
 
 void command_controller(char * command);
+
 /**
  * Reads command history from file (if it wasn't created by shell) and stores in internal vector.
  */ 
@@ -118,6 +149,7 @@ void check_script_file(char * opt_arg) {
     
 
 }
+
 /**
  * Checks for + handles optional args in initial shell call
  */ 
@@ -145,15 +177,13 @@ void parse_options(int argc, char * argv[]) {
  * TODO: add toggle for writing to file versus only storing in vector
 */
 void record_command(char * command) {
-    int print = command[0] != '!' && command[0] != '#';
+    int print = command[0] != '!' && command[0] != '#' && strcmp(command, "exit");
     if (!print) return;
     vector_push_back(history, command);
     if (history_file_name) {
         history_file = fopen(history_fp, "a");
-        if (history_file) {
-            fprintf(history_file, "%s\n", command);
-            fclose(history_file);
-        }
+        fprintf(history_file, "%s\n", command);
+        fclose(history_file);
     }
 }
 
@@ -199,13 +229,31 @@ char ** parse_command(char * command) {
     
     size_t arg_idx = 0;
     for (; arg_idx < arg_count; arg_idx++) {
-        command_args[arg_idx] = vector_get(args, arg_idx);
+        char * arg = vector_get(args, arg_idx);
+        if (arg) {
+             command_args[arg_idx] = strdup(arg);
+        }
     }
 
     command_args[arg_count] = NULL; 
 
     sstring_destroy(command_wrapper);
+    vector_destroy(args);
     return command_args;
+}
+
+void free_command_args(char ** argv) {
+    if (!argv) return;
+    size_t idx = 0;
+    size_t argc = get_argc(argv);
+    for(; idx < argc; idx++) {
+        if (!argv[idx]) continue;
+        free(argv[idx]);
+        argv[idx] = NULL;
+    }
+
+    free(argv);
+    argv = NULL;
 }
 
 
@@ -222,6 +270,118 @@ int logical_operator_idx(char ** command_argv) {
     return -1;
 }
 
+
+void get_proc_info(process * proc) {
+    char file_name_buffer[50];
+    sprintf(file_name_buffer, "/proc/%d/status", proc->pid);
+    FILE * proc_file = fopen(file_name_buffer, "r");
+
+    char line[1024];
+    while(fgets(line, 1024, proc_file)) {
+        if (!strncmp(line, "State:", 6)) {
+            proc->state = line[7];
+        } else if (!strncmp(line, "VmSize", 6)) {
+            char vsize_string[16];
+            sscanf(line + 7, "%s", vsize_string);
+            proc->vsize = atoi(vsize_string);
+        } else if (!strncmp(line, "Threads:", 8 )) {
+            char no_threads[16];
+            sscanf(line + 8, "%s", no_threads);
+            proc->nthreads = atoi(no_threads);
+        }
+
+        double exec_time = (double)(clock() - proc->exec_start) / CLOCKS_PER_SEC;
+        int minutes = exec_time / 60;
+        int secs = (int) (exec_time - (minutes * 60));
+        char time_buffer[16];
+        sprintf(time_buffer, "%d:%0.2d", minutes, secs);
+        proc->time_str = strdup(time_buffer);
+    }
+
+    fclose(proc_file);
+}
+
+process_info * make_proc_info(process * proc) {
+    process_info * proc_info = (process_info *) malloc(sizeof(proc_info));
+    proc_info->pid = proc->pid;
+    proc_info->nthreads = proc->nthreads;
+    proc_info->vsize = proc->vsize;
+    proc_info->state = proc->state;
+    proc_info->start_str = proc->start_str;
+    proc_info->time_str = proc->time_str;
+    proc_info->command = proc->command;
+    return proc_info; 
+}
+
+void exec_pfd(pid_t pid) {
+    print_process_fd_info_header();
+    
+    char file_name_buffer[50];
+    sprintf(file_name_buffer, "/proc/%d/fdinfo/%d", pid, 0);
+   
+}
+
+void exec_ps() {
+    print_process_info_header();
+    size_t idx = 0;
+    for (; idx < vector_size(processes); idx++) {
+        process * proc = vector_get(processes, idx);
+        if (proc) {
+            get_proc_info(proc);
+            if (proc->state == 'R' || proc->state == 'S') {
+                process_info * proc_info = make_proc_info(proc);
+                print_process_info(proc_info);
+                free(proc_info);
+            }
+        }
+       
+    }
+}
+
+char * get_original_command(int argc, char ** argv) {
+    printf("in goc\n");
+    size_t bytes_needed = 0;
+    int idx = 0;
+    for(; idx < argc; idx++) {
+        if (idx < argc - 1) bytes_needed++;
+        bytes_needed += strlen(argv[idx]);
+    }
+    printf("out of first loop \n");
+    bytes_needed++;
+    char * original_command = calloc(bytes_needed, bytes_needed);
+    original_command[strlen(original_command) + 1] = '\0';
+
+    idx = 0;
+    for(; idx < argc; idx++) {
+        original_command = strcat(original_command, argv[idx]);
+        if (idx < argc - 1) original_command[strlen(original_command)] = ' ';
+    }
+   
+    return original_command;
+}
+
+void track_process(char ** argv, pid_t pid) {
+    process * process_obj = calloc(sizeof(process), 1);
+    time_t start = time(NULL);
+    process_obj->pid = pid;
+    if (!strcmp(argv[0], "./shell")) {
+        process_obj->command = "./shell";
+    } else {
+        process_obj->command = get_original_command(get_argc(argv), argv);
+    }
+
+    struct tm * start_time = localtime(&start);
+    char time_buffer[256];
+    strftime(time_buffer, sizeof(time_buffer), "%H:%M", start_time);
+    process_obj->start_str = strdup(time_buffer);
+
+    //printf("%s\n", process_obj->start_str);
+    process_obj->exec_start = clock();
+    vector_push_back(processes, process_obj);
+
+    //get_proc_info(process_obj);
+}
+
 /**
  * Execute the given command.
  * TODO: add toggle between execution of built-in commands and external commands
@@ -229,13 +389,18 @@ int logical_operator_idx(char ** command_argv) {
  */ 
 
 void exec_command_helper(char ** command_argv, int argc, int * status_addr) {
-    int background = argc >= 2 && !strcmp(command_argv[argc - 1], "&");
-    background = background || command_argv[0][0] == '&';
+    int background_arg = argc >= 2 && !strcmp(command_argv[argc-1], "&");
+    char * last_arg = command_argv[argc - 1];
+    int background_char = (!background_arg) && last_arg[strlen(last_arg) - 1] == '&';
+
     //delete the & character so exec doesn't treat it as an argument
-    if (background) {
+    if (background_arg) {
         command_argv[argc - 1] = NULL;
+    } else if (background_char) {
+        last_arg[strlen(last_arg) - 1] = '\0';
     }
 
+    int background = background_arg || background_char;
     pid_t child_pid = fork();
     
     if (child_pid < 0) {
@@ -245,17 +410,20 @@ void exec_command_helper(char ** command_argv, int argc, int * status_addr) {
     } else if (child_pid == 0) {
         //child process
         pid_t my_pid = getpid();
-
         if (background) {
             if (setpgid(my_pid, my_pid) == -1) {
                 print_setpgid_failed();
                 exit(EXIT_FAILURE);
             };
+            track_process(command_argv, my_pid);
         }
+
         print_command_executed(my_pid); //command exec'd by <pid>
         execvp(command_argv[0], command_argv);
         print_exec_failed(command_argv[0]); //exec failed if this code is reached
+        free_command_args(command_argv);
         close_shell_err
+
     } else if (!background) {
          int child_status;
          int * status_arg = status_addr ? status_addr : &child_status;
@@ -335,7 +503,7 @@ void search_by_prefix(const char * command) {
 void logical_operator_helper(char ** command_argv, int * status_addr) {
     if (!command_argv) {
        *status_addr = EXIT_FAILURE;
-       return;
+       return; 
     }
 
     char * program_name = command_argv[0];
@@ -436,14 +604,19 @@ void command_controller(char * command) {
     } else if (program_name[0] == '!') {
         search_by_prefix(program_name);
     } else if (!strcmp(program_name, "exit")) {
+        free_command_args(command_argv);
         close_shell;
-     } else {
+    } else if (!strcmp(program_name, "ps")) {
+        exec_ps();
+    } else if (!strcmp(program_name, "pfd")) {
+        exec_pfd((pid_t)(atoi(command_argv[1])));  
+    } else {
         exec_command(command_argv, argc);
     }
     
-    free(command_argv);
-    command_argv = NULL;
+    free_command_args(command_argv);
 }
+
 
 void main_loop() {
     if (script_file_name) {
@@ -480,60 +653,20 @@ void main_loop() {
             }
 
             command_controller(line);
-
-
         }
 
     fclose(script_file);
 }
 
-void track_process_shell(int argc, char * argv[]) {
-    int idx = 0;
-    size_t bytes_needed = 0;
-    for (; idx < argc; idx++) {
-        if (idx < argc - 1) {
-            bytes_needed += 1;
-        }
-        bytes_needed += strlen(argv[idx]);
-    }
-
-    bytes_needed += 1;
-
-    //leverage sizeof(char) == 1?
-    char * original_command = calloc(bytes_needed, bytes_needed);
-
-    for (idx = 0; idx < argc; idx++) {
-        original_command = strcat(original_command, argv[idx]);
-        if (idx < argc - 1) {
-            original_command[strlen(original_command)] = ' '; 
-        }    
-    }
-
-    original_command[strlen(original_command)] = '\0';
-
-    pid_t shell_pid = getpid();
-    process * shell_process = malloc(sizeof(process));
-
-    time_t start = time(NULL);
-    shell_process->pid = shell_pid;
-    shell_process->command = original_command;
-    shell_process->start = localtime(&start);
-    shell_process->exec_time = clock();
-
-}
-
-
 int shell(int argc, char *argv[]) {
-
     signal(SIGINT, sig_handler);
     signal(SIGCHLD, sig_handler);
 
     history = string_vector_create();
     parse_options(argc, argv);
-
-    track_process_shell(argc, argv);
-    processes = vector_create(NULL, NULL, NULL);
     
+    processes = shallow_vector_create();
+    track_process(argv, getpid());
     main_loop();
 
     return 0;
