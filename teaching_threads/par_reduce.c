@@ -43,8 +43,6 @@ void initialize_tasks(task * t, reducer r_func, int base_case,
         t[idx].list_len = sub_len;
         t[idx].r_func = r_func;
         t[idx].base_case = base_case;
-        printf("first: %d\n", t[idx].list[0]);
-        
         
     }
 }
@@ -52,6 +50,11 @@ void initialize_tasks(task * t, reducer r_func, int base_case,
 int par_reduce(int *list, size_t list_len, reducer reduce_func, int base_case,
                size_t num_threads) {
     /* Your implementation goes here */
+
+    if (num_threads > list_len) {
+        num_threads = list_len;
+    }
+
     task * tasks = calloc(num_threads, sizeof(task));
     initialize_tasks(tasks, reduce_func, base_case, list, list_len, num_threads);
    
