@@ -6,6 +6,17 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <errno.h>
+
+extern size_t MEMORY_LIMIT;
+
+typedef struct _tag {
+    size_t size;
+    struct _tag * next;
+} tag;
+
+//First node of linked list of free elements.
+static tag * free_head;
 
 /**
  * Allocate space for array in memory
@@ -35,6 +46,50 @@ void *calloc(size_t num, size_t size) {
     return NULL;
 }
 
+tag * find_first_fit(size_t size) {
+    tag * current = free_head;
+    tag * prev = NULL; //no antecedent for first node
+
+    while (current) {
+        int sufficient = current->size >= size;
+
+        if (!sufficient) {
+            prev = current;
+            current = current->next;
+            continue;
+        }
+
+        size_t leftover_size = current->size - size;
+        if (leftover_size > sizeof(tag)) {
+            tag * leftover_block = (tag *) ((char *) current + size);
+            leftover_block->size = leftover_size - sizeof(tag);
+
+            if (prev) {
+                prev->next = leftover_block;
+                leftover_block->next = current->next;
+            } else {
+                leftover_block->next = free_head->next;
+                free_head = leftover_block;
+            }
+        } else {
+            tag * temp = NULL;
+            current->next = NULL;
+            if (prev) {  
+                prev->next = temp;
+            } else {
+                
+                free_head = free_head->next;
+            }
+        }
+
+        current->size = leftover_size > sizeof(tag) ? size : size + leftover_size;
+        return current;
+
+
+    }
+
+    return NULL;
+}
 /**
  * Allocate memory block
  *
@@ -57,8 +112,17 @@ void *calloc(size_t num, size_t size) {
  * @see http://www.cplusplus.com/reference/clibrary/cstdlib/malloc/
  */
 void *malloc(size_t size) {
-    // implement malloc!
-    return NULL;
+    tag * first_fit = find_first_fit(size);
+    if (first_fit) {
+        return ((char *) first_fit) + sizeof(tag); 
+    }
+    size_t min_size = size + sizeof(tag);
+    tag * memory_block = (tag *) sbrk(min_size);
+
+    memory_block->size = size;
+    memory_block->next = NULL;
+
+    return ((char *) memory_block) + sizeof(tag);
 }
 
 /**
@@ -78,7 +142,17 @@ void *malloc(size_t size) {
  *    passed as argument, no action occurs.
  */
 void free(void *ptr) {
-    // implement free!
+    if (!ptr)
+        return;
+
+    if (!free_head) {
+        free_head = (tag *) ((char *) ptr - sizeof(tag));
+        free_head->next = NULL;
+    } else {
+        tag * temp = (tag *) ((char *) ptr - sizeof(tag));
+        temp->next = free_head;
+        free_head = temp;
+    }
 }
 
 /**
