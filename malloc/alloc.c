@@ -27,49 +27,94 @@ static void * heap_start;
 static void * heap_end;
 static meta * free_list_head;
 
+
 void free_list_remove(meta * ptr) {
-    //handle case where ptr == head of list
     if (!ptr) return;
 
-    
-    if (ptr == free_list_head) {
-        free_list_head = free_list_head->next;
-        if (free_list_head) free_list_head->prev = NULL;
-        return;
-    }
-    
-    meta * prev = ptr->prev;
-    meta * next = ptr->next;
+    ptr->is_allocated = 1; //removing from free list -> block allocated
 
-    prev->next = next;
-    if (next) {
-        next->prev = prev;
-    }
+    meta * prev = ptr->prev; //save payload values
+    meta * next = ptr->next;
 
     ptr->prev = NULL;
     ptr->next = NULL;
-}
+
+    //handle case where ptr == head of list
+    if (ptr == free_list_head) {
+        meta * new_flh = free_list_head->next;
+        
+        free_list_head = new_flh;
+        if (free_list_head)
+            free_list_head->prev = NULL; //ensure first node has no prev value
+        return;
+    }
+
+    
+    if (prev) 
+        prev->next = next; //join neighboring nodes in linked list
+    if (next)
+        next->prev = prev;
+}   
 
 void free_list_add(meta * ptr) {
-    if (!ptr) {
+    if (!ptr) return;
+
+    ptr->is_allocated = 0; //adding to free list -> block not alloc'd
+     
+    if (!free_list_head) {
+        ptr->prev = NULL; ptr->next = NULL;
+        free_list_head = ptr;
         return;
     }
-    
-    if (!free_list_head) {
-        free_list_head = ptr;
-        free_list_head->next = NULL;
-        free_list_head->prev = NULL;
 
-        return;
-    } 
-
-    ptr->next = free_list_head->next;
+    ptr->next = free_list_head;
+    free_list_head->prev = ptr;
     ptr->prev = NULL;
     free_list_head = ptr;
+}
 
-    if (ptr->next) {
-        ptr->next->prev = ptr;
+void * split_block(size_t request_size, meta * ptr) {
+    if (!ptr) return NULL;
+
+    size_t old_size = ptr->size;
+    size_t leftover_bytes = old_size - request_size - sizeof(meta) - sizeof(btag);
+    //handle case where there's not enough room for another block + overhead
+    //cons: wasteful, gives user back more space than they requested
+    //pros: avoid headache of untagged memory blocks
+    if (leftover_bytes <= 0) {
+        free_list_remove(ptr);
+        return ptr; 
     }
+
+    void * void_ptr = (void *) ptr;
+    btag * leftover_btag = (btag *) (void_ptr + sizeof(meta) + ptr->size);
+    leftover_btag->size = leftover_bytes;
+
+    btag * request_btag = (btag *) (void_ptr + sizeof(meta) + request_size);
+    request_btag->size = request_size;
+
+    meta * leftover_meta = (meta *) (void_ptr + sizeof(meta) + request_size + sizeof(btag));
+    leftover_meta->size = leftover_bytes;
+    leftover_meta->is_allocated = 0;
+
+    ptr->size = request_size;
+    ptr->is_allocated = 1;
+    
+    leftover_meta->next = ptr->next;
+    leftover_meta->prev = ptr->prev;
+
+    if (leftover_meta->next) {
+        leftover_meta->next->prev = leftover_meta;
+    }
+
+    if (leftover_meta->prev) {
+        leftover_meta->prev->next = leftover_meta;
+    }
+
+    ptr->prev = NULL; ptr->next = NULL;
+    ptr->is_allocated = 1;
+    return void_ptr + sizeof(meta);
+
 }
 
 void * find_first_fit(size_t size) {
@@ -77,9 +122,7 @@ void * find_first_fit(size_t size) {
 
    while (free_iter) {
        if (free_iter->size >= size) {
-           free_iter->is_allocated = 1;
-           free_list_remove(free_iter);
-           return free_iter;
+           return split_block(size, free_iter);
        }
 
        free_iter = free_iter->next;
@@ -87,7 +130,82 @@ void * find_first_fit(size_t size) {
 
    return NULL;
 }
-/**
+
+/*
+    Coalesce with right neighbor.
+    1) Check that there is a succeeding mem block (this node is not last before heap end)
+    2) Check this succeeding block is free.
+    3) If the successor is free, it is already a part of the free list.
+    4) Using LIFO insertion policy, no guarantee that nodes in free list are address-ordered
+        a) how to maintain list without knowing how ptrs should be updated?
+        b) remove succeeding block from free list, join the two blocks, then add larger block
+        c) (from https://courses.cs.washington.edu/courses/cse351/17sp/lectures/CSE351-L24-memalloc-II_17sp-ink-day2.pdf)
+*/
+int coalesce_r(meta * ptr) {
+    if (!ptr) return 0;
+
+    //check that there is a next block
+    meta * rn_meta = (meta *) ((void *) ptr + sizeof(meta) + ptr->size + sizeof(btag));
+
+    if ((void *) rn_meta >= heap_end) return 0;
+
+    //check that next block is free
+    if (rn_meta->is_allocated) return 0;
+
+    //remove next block from free list
+    free_list_remove(rn_meta);
+
+    btag * ptr_btag = (btag *) ((void *) ptr + sizeof(meta) + ptr->size);
+
+    //join blocks
+    size_t new_size = rn_meta->size + sizeof(btag) + sizeof(meta) + ptr->size;
+    rn_meta->size = new_size;
+
+    ptr_btag->size = new_size;
+
+    //add block back to free list
+    free_list_add(rn_meta);
+
+    return 1;
+}
+
+/*
+    Coalesce with left neighbor.
+    1) Check that there is a preceding mem block (this node is not last before heap end)
+    2) Check this preceding block is free.
+    3) If the successor is free, it is already a part of the free list.
+    4) Using LIFO insertion policy, no guarantee that nodes in free list are address-ordered
+        a) how to maintain list without knowing how ptrs should be updated?
+        b) remove succeeding block from free list, join the two blocks, then add larger block
+        c) (from https://courses.cs.washington.edu/courses/cse351/17sp/lectures/CSE351-L24-memalloc-II_17sp-ink-day2.pdf)
+*/
+int coalesce_l(meta * ptr) {
+    if (!ptr) return 0;
+
+    //check that there is a previous block
+    if ((void *) ptr == heap_start) return 0;
+
+    btag * ln_btag = (btag *) ((void *) ptr - sizeof(btag));
+    meta * ln_meta = (meta *) ((void *) ln_btag - ln_btag->size - sizeof(meta));
+    //check preceding block is free
+    if (ln_meta->is_allocated) return 0;
+
+    //remove preceding block from free list
+    free_list_remove(ln_meta);
+
+    //join the two blocks
+    size_t new_size = ln_meta->size + sizeof(btag) + sizeof(meta) + ptr->size;
+    ln_meta->size = new_size;
+
+    btag * updated_btag = (btag *) ((void *) ln_meta + sizeof(meta) + new_size);
+    updated_btag->size = new_size;
+
+    //add larger block back to free list
+    free_list_add(ln_meta);
+
+    return 1;
+}
+ /**
  * Allocate space for array in memory
  *
  * Allocates a block of memory for an array of num elements, each of them size
@@ -193,9 +311,10 @@ void free(void *ptr) {
     if (!ptr) return;
 
     meta * ptr_meta = (meta *) (ptr - sizeof(meta));
-
-    free_list_add(ptr_meta);
-    
+    int did_add = coalesce_l(ptr_meta) || coalesce_r(ptr_meta); 
+    if (!did_add) {
+        free_list_add(ptr_meta);
+    }
 }   
 
 /**
