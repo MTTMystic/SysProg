@@ -8,16 +8,85 @@
 #include <unistd.h>
 #include <errno.h>
 
+
 extern size_t MEMORY_LIMIT;
-
-typedef struct _tag {
+typedef struct _meta {
     size_t size;
-    struct _tag * next;
-} tag;
+    char is_allocated;
+    struct _meta * next;
+    struct _meta * prev;
+} meta;
 
-//First node of linked list of free elements.
-static tag * free_head;
 
+typedef struct _btag {
+    size_t size;
+} btag;
+
+
+static void * heap_start;
+static void * heap_end;
+static meta * free_list_head;
+
+void free_list_remove(meta * ptr) {
+    //handle case where ptr == head of list
+    if (!ptr) return;
+
+    
+    if (ptr == free_list_head) {
+        free_list_head = free_list_head->next;
+        if (free_list_head) free_list_head->prev = NULL;
+        return;
+    }
+    
+    meta * prev = ptr->prev;
+    meta * next = ptr->next;
+
+    prev->next = next;
+    if (next) {
+        next->prev = prev;
+    }
+
+    ptr->prev = NULL;
+    ptr->next = NULL;
+}
+
+void free_list_add(meta * ptr) {
+    if (!ptr) {
+        return;
+    }
+    
+    if (!free_list_head) {
+        free_list_head = ptr;
+        free_list_head->next = NULL;
+        free_list_head->prev = NULL;
+
+        return;
+    } 
+
+    ptr->next = free_list_head->next;
+    ptr->prev = NULL;
+    free_list_head = ptr;
+
+    if (ptr->next) {
+        ptr->next->prev = ptr;
+    }
+}
+
+void * find_first_fit(size_t size) {
+   meta * free_iter = free_list_head;
+
+   while (free_iter) {
+       if (free_iter->size >= size) {
+           free_iter->is_allocated = 1;
+           free_list_remove(free_iter);
+           return free_iter;
+       }
+
+       free_iter = free_iter->next;
+   }
+
+   return NULL;
+}
 /**
  * Allocate space for array in memory
  *
@@ -42,54 +111,32 @@ static tag * free_head;
  * @see http://www.cplusplus.com/reference/clibrary/cstdlib/calloc/
  */
 void *calloc(size_t num, size_t size) {
-    // implement calloc!
-    return NULL;
+  return NULL;
 }
 
-tag * find_first_fit(size_t size) {
-    tag * current = free_head;
-    tag * prev = NULL; //no antecedent for first node
+void * create_new_block(size_t size) {
+    if (size == 0) return NULL;
 
-    while (current) {
-        int sufficient = current->size >= size;
+    size_t min_size = size + sizeof(meta) + sizeof(btag);
+    void * mem_block = sbrk(min_size);
+    
+    if (mem_block == (void *) -1) return NULL;
 
-        if (!sufficient) {
-            prev = current;
-            current = current->next;
-            continue;
-        }
+    heap_end = sbrk(0);
 
-        size_t leftover_size = current->size - size;
-        if (leftover_size > sizeof(tag)) {
-            tag * leftover_block = (tag *) ((char *) current + size);
-            leftover_block->size = leftover_size - sizeof(tag);
+    meta * mem_data = (meta *) mem_block;
+    mem_data->is_allocated = 1;
+    mem_data->size = size;
+    mem_data->next = NULL;
+    mem_data->prev = NULL;
 
-            if (prev) {
-                prev->next = leftover_block;
-                leftover_block->next = current->next;
-            } else {
-                leftover_block->next = free_head->next;
-                free_head = leftover_block;
-            }
-        } else {
-            tag * temp = NULL;
-            current->next = NULL;
-            if (prev) {  
-                prev->next = temp;
-            } else {
-                
-                free_head = free_head->next;
-            }
-        }
-
-        current->size = leftover_size > sizeof(tag) ? size : size + leftover_size;
-        return current;
+    btag * mem_btag = (btag *) (mem_block + sizeof(meta) + size);
+    mem_btag->size = size;
 
 
-    }
-
-    return NULL;
+    return mem_block + sizeof(meta);
 }
+
 /**
  * Allocate memory block
  *
@@ -112,19 +159,20 @@ tag * find_first_fit(size_t size) {
  * @see http://www.cplusplus.com/reference/clibrary/cstdlib/malloc/
  */
 void *malloc(size_t size) {
-    tag * first_fit = find_first_fit(size);
-    if (first_fit) {
-        return ((char *) first_fit) + sizeof(tag); 
+    if (size == 0) {
+        return NULL;
     }
-    size_t min_size = size + sizeof(tag);
-    tag * memory_block = (tag *) sbrk(min_size);
+    
+    if (!heap_start) {
+        heap_start = sbrk(0);
+    }
 
-    memory_block->size = size;
-    memory_block->next = NULL;
+    void * first_fit = find_first_fit(size);
+    if (first_fit) return first_fit;
 
-    return ((char *) memory_block) + sizeof(tag);
+    return create_new_block(size);
+    
 }
-
 /**
  * Deallocate space in memory
  *
@@ -142,18 +190,13 @@ void *malloc(size_t size) {
  *    passed as argument, no action occurs.
  */
 void free(void *ptr) {
-    if (!ptr)
-        return;
+    if (!ptr) return;
 
-    if (!free_head) {
-        free_head = (tag *) ((char *) ptr - sizeof(tag));
-        free_head->next = NULL;
-    } else {
-        tag * temp = (tag *) ((char *) ptr - sizeof(tag));
-        temp->next = free_head;
-        free_head = temp;
-    }
-}
+    meta * ptr_meta = (meta *) (ptr - sizeof(meta));
+
+    free_list_add(ptr_meta);
+    
+}   
 
 /**
  * Reallocate memory block
@@ -201,6 +244,5 @@ void free(void *ptr) {
  * @see http://www.cplusplus.com/reference/clibrary/cstdlib/realloc/
  */
 void *realloc(void *ptr, size_t size) {
-    // implement realloc!
     return NULL;
 }
