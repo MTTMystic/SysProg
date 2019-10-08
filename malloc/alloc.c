@@ -90,17 +90,15 @@ void * split_block(size_t request_size, meta * ptr) {
     }
 
     void * void_ptr = (void *) ptr;
-    btag * leftover_btag = (btag *) (void_ptr + sizeof(meta) + ptr->size);
-    leftover_btag->size = leftover_bytes;
-
-    btag * request_btag = (btag *) (void_ptr + sizeof(meta) + request_size);
-    request_btag->size = request_size;
-
-    meta * leftover_meta = (meta *) (void_ptr + sizeof(meta) + request_size + sizeof(btag));
-    leftover_meta->size = leftover_bytes;
-    leftover_meta->is_allocated = 0;
-
     ptr->size = request_size;
+    btag * ptr_btag = void_ptr + sizeof(meta) + request_size;
+    ptr_btag->size = request_size;
+
+    meta * leftover_meta = (meta *) (void_ptr + sizeof(meta) + ptr->size + sizeof(btag));
+    leftover_meta->size = leftover_bytes;
+
+    btag * leftover_btag = (btag *) ((void *) leftover_meta + sizeof(meta) + leftover_bytes);
+    leftover_btag->size = leftover_bytes;
 
     if (!ptr->is_allocated) {
         ptr->is_allocated = 1;
@@ -197,8 +195,6 @@ int coalesce_l(meta * ptr) {
 
     btag * ln_btag = (btag *) ((void *) ptr - sizeof(btag));
     meta * ln_meta = (meta *) ((void *) ptr - sizeof(btag) - ln_btag->size - sizeof(meta));
-
-    if ((void *) ln_meta < heap_start)
     //check preceding block is free
     if (ln_meta->is_allocated) return 0;
 
