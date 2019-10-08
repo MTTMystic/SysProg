@@ -9,7 +9,9 @@
 
 void *reduce(void *ptr, int size) {
     if (size > STOP_MALLOC_SIZE) {
+        fprintf(stderr, "ptr1 value before realloc is: %d\n", *((int *)ptr));
         void *ptr1 = realloc(ptr, size / 2);
+        fprintf(stderr, "ptr1 value after realloc is: %d\n", *((int *)ptr1));
         void *ptr2 = malloc(size / 2);
 
         if (ptr1 == NULL || ptr2 == NULL) {
@@ -18,9 +20,11 @@ void *reduce(void *ptr, int size) {
         }
 
         ptr1 = reduce(ptr1, size / 2);
+        fprintf(stderr, "ptr1 value after reduce is: %d\n", *((int *)ptr1));
         ptr2 = reduce(ptr2, size / 2);
 
         if (*((int *)ptr1) != size / 2 || *((int *)ptr2) != size / 2) {
+            fprintf(stderr, "value at ptr1 was: %d\nvalue at ptr2 was: %d\ncorrect value is: %d\n", *((int *)ptr1), *((int *)ptr2), size/2);
             fprintf(stderr, "Memory failed to contain correct data after many "
                             "allocations!\n");
             exit(2);

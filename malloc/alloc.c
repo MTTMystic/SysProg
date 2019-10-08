@@ -78,11 +78,14 @@ void * split_block(size_t request_size, meta * ptr) {
 
     size_t old_size = ptr->size;
     size_t leftover_bytes = old_size - request_size - sizeof(meta) - sizeof(btag);
+
     //handle case where there's not enough room for another block + overhead
     //cons: wasteful, gives user back more space than they requested
     //pros: avoid headache of untagged memory blocks
     if (leftover_bytes <= 0) {
-        free_list_remove(ptr);
+        if (!ptr->is_allocated) {
+            free_list_remove(ptr); //if this pointer was free, remove it from free list
+        }
         return ptr; 
     }
 
@@ -98,21 +101,26 @@ void * split_block(size_t request_size, meta * ptr) {
     leftover_meta->is_allocated = 0;
 
     ptr->size = request_size;
-    ptr->is_allocated = 1;
+
+    if (!ptr->is_allocated) {
+        ptr->is_allocated = 1;
     
-    leftover_meta->next = ptr->next;
-    leftover_meta->prev = ptr->prev;
+        leftover_meta->next = ptr->next;
+        leftover_meta->prev = ptr->prev;
 
-    if (leftover_meta->next) {
-        leftover_meta->next->prev = leftover_meta;
+        if (leftover_meta->next) {
+            leftover_meta->next->prev = leftover_meta;
+        }
+
+        if (leftover_meta->prev) {
+            leftover_meta->prev->next = leftover_meta;
+        }
+
+        ptr->prev = NULL; ptr->next = NULL;
+    } else {
+        free_list_add(leftover_meta);
     }
 
-    if (leftover_meta->prev) {
-        leftover_meta->prev->next = leftover_meta;
-    }
-
-    ptr->prev = NULL; ptr->next = NULL;
-    ptr->is_allocated = 1;
     return void_ptr + sizeof(meta);
 
 }
@@ -144,6 +152,7 @@ void * find_first_fit(size_t size) {
 int coalesce_r(meta * ptr) {
     if (!ptr) return 0;
 
+    heap_end = sbrk(0);
     //check that there is a next block
     meta * rn_meta = (meta *) ((void *) ptr + sizeof(meta) + ptr->size + sizeof(btag));
 
@@ -155,13 +164,14 @@ int coalesce_r(meta * ptr) {
     //remove next block from free list
     free_list_remove(rn_meta);
 
-    btag * ptr_btag = (btag *) ((void *) ptr + sizeof(meta) + ptr->size);
+    //btag * ptr_btag = (btag *) ((void *) ptr + sizeof(meta) + ptr->size);
 
     //join blocks
-    size_t new_size = rn_meta->size + sizeof(btag) + sizeof(meta) + ptr->size;
-    rn_meta->size = new_size;
+    size_t new_size = ptr->size + sizeof(btag) + sizeof(meta) + rn_meta->size;
+    ptr->size = new_size;
 
-    ptr_btag->size = new_size;
+    btag * rn_btag = (btag *) ((void *) ptr + sizeof(meta) + ptr->size);
+    rn_btag->size = new_size;
 
     //add block back to free list
     free_list_add(rn_meta);
@@ -186,7 +196,9 @@ int coalesce_l(meta * ptr) {
     if ((void *) ptr == heap_start) return 0;
 
     btag * ln_btag = (btag *) ((void *) ptr - sizeof(btag));
-    meta * ln_meta = (meta *) ((void *) ln_btag - ln_btag->size - sizeof(meta));
+    meta * ln_meta = (meta *) ((void *) ptr - sizeof(btag) - ln_btag->size - sizeof(meta));
+
+    if ((void *) ln_meta < heap_start)
     //check preceding block is free
     if (ln_meta->is_allocated) return 0;
 
@@ -197,8 +209,8 @@ int coalesce_l(meta * ptr) {
     size_t new_size = ln_meta->size + sizeof(btag) + sizeof(meta) + ptr->size;
     ln_meta->size = new_size;
 
-    btag * updated_btag = (btag *) ((void *) ln_meta + sizeof(meta) + new_size);
-    updated_btag->size = new_size;
+    ln_btag = (btag *) ((void *) ln_meta + sizeof(meta) + ln_meta->size);
+    ln_btag->size = new_size;
 
     //add larger block back to free list
     free_list_add(ln_meta);
@@ -317,6 +329,7 @@ void free(void *ptr) {
     }
 }   
 
+
 /**
  * Reallocate memory block
  *
@@ -363,5 +376,26 @@ void free(void *ptr) {
  * @see http://www.cplusplus.com/reference/clibrary/cstdlib/realloc/
  */
 void *realloc(void *ptr, size_t size) {
-    return NULL;
+    if (!ptr) {
+        return malloc(size);
+    }
+    
+    if (!size) {
+        free(ptr);
+        return NULL;
+    }
+
+    meta * ptr_meta = (meta *) (ptr - sizeof(meta));
+
+    if (ptr_meta->size >= size) {
+        return split_block(size, ptr_meta);
+    }
+    
+    void * ret_ptr = malloc(size);
+
+    if (ret_ptr) {
+        memmove(ret_ptr, ptr, ptr_meta->size);
+    }
+    
+    return ret_ptr;
 }
