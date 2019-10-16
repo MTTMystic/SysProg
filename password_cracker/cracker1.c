@@ -41,9 +41,29 @@ task * string_to_task(char * input_line) {
     //malloc new memory for task struct
     task * new_task = (task *) malloc(sizeof(task));
     //place space-separated strings into vars
-    sscanf(input_line, "%s %s %s", new_task->username, new_task->pw_hash, new_task->known_chars);
+    //define maximum string lengths to avoid buffer overflow
+    sscanf(input_line, "%8s %13s %8s", new_task->username, new_task->pw_hash, new_task->known_chars);
     return new_task;
 };
+
+/**
+ * Reads lines of input from stdin and attempts to convert them to task objects.
+ * Adds retrieved task object to task queue.
+ * To mark the end of the thread-safe queue, adds an "empty" task after input reading is complete.
+ */ 
+void read_tasks() {
+    //max strlen for line: 8(u/n) + 1(space) + 13(hash) + 1(space) + 8(known chars) + 1(\0) 
+    char buffer[32];
+    while(fgets(buffer, 32, stdin)) {
+        task * new_task = string_to_task(buffer);
+        queue_push(task_queue, new_task);
+        task_count++;
+    }
+    task * empty_task = (task *) malloc(sizeof(task));
+    //empty_task->known_chars = empty_task->pw_hash = empty_task->username = NULL;
+    queue_push(task_queue, empty_task);
+}
+
 
 int start(size_t thread_count) {
     // TODO your code here, make sure to use thread_count!
@@ -53,10 +73,7 @@ int start(size_t thread_count) {
     cdata.initialized = 0;
     //create task queue w/o maximum size
     task_queue = queue_create(0);
-    task * example = string_to_task("donna xxC4UjY9eNri6 hello...");
-
-    printf("%s %s %s\n", example->username, example->pw_hash, example->known_chars);
-    //create [thread_count] threads to start in crack_password
+    read_tasks();
 
     return 0; // DO NOT change the return code since AG uses it to check if your
               // program exited normally
