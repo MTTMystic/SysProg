@@ -12,25 +12,51 @@
 #include <string.h>
 #include <stdio.h>
 
+typedef struct _task {
+    char username[9]; //maximum 8 chars + null terminator
+    char hash[14]; //maximum 13 chars + null terminator
+    char password[9]; //same length rule as u/n
+    int known_chars; //indicates length of known prefix
+} task;
 
-static struct crypt_data cdata;
+
+typedef struct _thread_data {
+    pthread_t tid;
+    int idx; 
+    int numFound;
+    int numFailed;
+} thread_data;
+
+
+//static struct crypt_data cdata;
 static struct queue * task_queue;
 static char queue_empty = 0;
 
 static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
-typedef struct _task {
-    char username[9]; //maximum 8 chars + null terminator
-    char pw_hash[14]; //maximum 13 chars + null terminator
-    char known_chars[9]; //same length rule as u/n
-} task;
+static thread_data * t_data;
 
+void process_task (void * data);
 
-typedef struct _thread_data {
-    pthread_t id;
-    int thread_idx; 
-} thread_data;
+void create_workers(size_t thread_count) {
+    t_data = calloc(thread_count, sizeof(t_data));
+    
+    size_t t_idx = 0;
+    for(; t_idx < thread_count; t_idx++) {
+        thread_data * current = &t_data[t_idx];
+        current->idx = t_idx + 1;
+        current->numFailed = 0;
+        current->numFound = 0;
+        pthread_create(&current->tid, NULL, (void *) process_task, current);
+    }
+}
 
+void join_workers(size_t thread_count) {
+    size_t t_idx = 0;
+    for(; t_idx < thread_count; t_idx++) {
+        pthread_join(t_data[t_idx].tid, NULL);
+    }
+}
 /**
  * Converts given line of input to a task struct, and returns pointed to alloc'd task
  * 
@@ -51,7 +77,8 @@ task * string_to_task(char * input_line) {
     task * new_task = (task *) malloc(sizeof(task));
     //place space-separated strings into vars
     //define maximum string lengths to avoid buffer overflow
-    sscanf(input_line, "%8s %13s %8s", new_task->username, new_task->pw_hash, new_task->known_chars);
+    sscanf(input_line, "%8s %13s %8s", new_task->username, new_task->hash, new_task->password);
+    new_task->known_chars = getPrefixLength(new_task->password);
     return new_task;
 };
 
@@ -72,40 +99,36 @@ void read_tasks() {
     queue_push(task_queue, empty_task);
 }
 
+
 /**
- * Counts the number of known chars from the given task that are alphanumeric and not periods.
- * @param input_task
- * A task for which to count the # of known chars
+ * Edits the password of the given task so that periods (representing unknown letters) are replaced with 'a', creating the first possible password to test against the given hash.
+ * 
+ * Returns a version of the password which has all the unknown letters replaced with 'z', marking the last possible password to test against the given hash.
+ * 
+ * @param pw_task
+ * A task for which to setup the password.
+ * 
  * @return
- * The number of characters (<= 8) known of the password.
+ * Last possible password to test.
  */ 
-int count_known_chars(task * input_task) {
-    //early exit if no task is input
-    if (!input_task) {
-        return 0; 
+char * setup_password(task * pw_task) {
+   char * last_pw = strdup(pw_task->password);
+    //begin iteration at first unknown char
+    size_t c_idx = pw_task->known_chars;
+    for (; c_idx < strlen(pw_task->password); c_idx++) {
+        pw_task->password[c_idx] = 'a';
+        last_pw[c_idx] = 'z';
     }
 
-    int num_chars = 0;
-    int char_idx = 0;
-    for (; char_idx < 8; char_idx++) {
-        char current = input_task->known_chars[char_idx];
-        if (current != '.') {
-            num_chars++;
-        }
-    }
-
-    return num_chars;
-}
-
-
-
+    return last_pw;
+}   
 
 void process_task(void * data) {
     task * pw_task = NULL;
     thread_data * thr_data = (thread_data *) data;
 
-    while(1) {
-        pw_task = queue_pull(task_queue);
+    while( (pw_task = queue_pull(task_queue))) {
+       
         if (!strcmp(pw_task->username, "emp_task")) {
             pthread_mutex_lock(&lock);
             queue_empty = 1;
@@ -113,7 +136,36 @@ void process_task(void * data) {
             return;
         }
 
-        v1_print_thread_start(thr_data->thread_idx, pw_task->username);
+        int stop = 0;
+        int found = 0;
+        int attempts = 0;
+
+        const char * hash;
+
+        struct crypt_data cdata;
+        cdata.initialized = 0;
+
+        double startTime = getThreadCPUTime();
+        v1_print_thread_start(thr_data->idx, pw_task->username);
+        
+        char * end_pw = setup_password(pw_task);
+        
+        do {
+            hash = crypt_r(pw_task->password, "xx", &cdata);
+            attempts++;
+            found = !strcmp(hash, pw_task->hash);
+            stop = !strcmp(pw_task->password, end_pw);
+        } while(!found && !stop && incrementString(pw_task->password));
+ 
+        double endTime = getThreadCPUTime();
+
+        v1_print_thread_result(thr_data->idx, pw_task->username, pw_task->password, attempts, endTime - startTime, !found);
+
+        if (found) {
+            thr_data->numFound++;
+        } else {
+            thr_data->numFailed++;
+        }
 
         pthread_mutex_lock(&lock);
         char should_return = queue_empty;
@@ -125,29 +177,35 @@ void process_task(void * data) {
     }   
 }
 
+void printSummary(size_t thread_count) {
+    int recovered = 0;
+    int failed = 0;
+    
+    size_t tidx = 0;
+    for(; tidx < thread_count; tidx++) {
+        recovered += t_data[tidx].numFound;
+        failed += t_data[tidx].numFailed;
+    }
+
+    v1_print_summary(recovered, failed);
+    
+}
+
 int start(size_t thread_count) {
     // TODO your code here, make sure to use thread_count!
     // Remember to ONLY crack passwords in other threads
 
     //set val for initialized before using cdata
-    cdata.initialized = 0;
+    //cdata.initialized = 0;
     //create task queue w/o maximum size
     task_queue = queue_create(0);
-    //alloc array of [thread_count] thread_data structs
-    thread_data * t_data = calloc(thread_count, sizeof(thread_data));
-    t_data[0].thread_idx = 1;
-    t_data[1].thread_idx = 2;
-    t_data[2].thread_idx = 3;
-
-    pthread_create(&t_data[0].id, NULL, (void *) process_task, &t_data[0]);
-    pthread_create(&t_data[1].id, NULL, (void *) process_task, &t_data[1]);
-    pthread_create(&t_data[2].id, NULL, (void *) process_task, &t_data[2]);
+    create_workers(thread_count);
 
     read_tasks();
 
-    pthread_join(t_data[0].id, NULL);
-    pthread_join(t_data[1].id, NULL);
-    pthread_join(t_data[2].id, NULL);
+    join_workers(thread_count);
+
+    printSummary(thread_count);
     return 0; // DO NOT change the return code since AG uses it to check if your
               // program exited normally
 }
