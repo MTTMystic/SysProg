@@ -13,9 +13,9 @@
 #include <stdio.h>
 
 typedef struct _task {
-    char username[9]; //maximum 8 chars + null terminator
-    char hash[14]; //maximum 13 chars + null terminator
-    char password[9]; //same length rule as u/n
+    char * username; //maximum 8 chars + null terminator
+    char * hash; //maximum 13 chars + null terminator
+    char * password; //same length rule as u/n
     int known_chars; //indicates length of known prefix
 } task;
 
@@ -39,7 +39,7 @@ static thread_data * t_data;
 void process_task (void * data);
 
 void create_workers(size_t thread_count) {
-    t_data = calloc(thread_count, sizeof(t_data));
+    t_data = malloc(thread_count * sizeof(thread_data));
     
     size_t t_idx = 0;
     for(; t_idx < thread_count; t_idx++) {
@@ -67,19 +67,37 @@ void join_workers(size_t thread_count) {
  * Pointer to task struct matching given input
  * NULL if input is empty
  */ 
-task * string_to_task(char * input_line) {
-    //return NULL ptr if given input is empty string
-    if (strlen(input_line) == 0) {
-        return NULL;
+task * string_to_task() {
+    char * buffer = NULL;
+    size_t buffer_len = 0;
+    ssize_t bytes_read = 0;
+
+    while ((bytes_read = getline(&buffer, &buffer_len, stdin)) != -1) {
+        buffer[bytes_read - 1] = '\0';
+
+        char * un = buffer;
+
+        char * hash = strchr(un, ' ');
+        hash[0] = '\0';
+        hash++;
+
+        char * pw = strchr(hash, ' ');
+        pw[0] = '\0';
+        pw++;
+
+        task * pw_task= malloc(sizeof(task));
+
+        pw_task->username = un;
+        pw_task->hash = hash;
+        pw_task->password = pw;
+
+        pw_task->known_chars = getPrefixLength(pw_task->password);
+        
+        return pw_task;
     }
 
-    //malloc new memory for task struct
-    task * new_task = (task *) malloc(sizeof(task));
-    //place space-separated strings into vars
-    //define maximum string lengths to avoid buffer overflow
-    sscanf(input_line, "%8s %13s %8s", new_task->username, new_task->hash, new_task->password);
-    new_task->known_chars = getPrefixLength(new_task->password);
-    return new_task;
+    free(buffer);
+    return NULL;
 };
 
 /**
@@ -89,13 +107,13 @@ task * string_to_task(char * input_line) {
  */ 
 void read_tasks() {
     //max strlen for line: 8(u/n) + 1(space) + 13(hash) + 1(space) + 8(known chars) + 1(\0) 
-    char buffer[32];
-    while(fgets(buffer, 32, stdin)) {
-        task * new_task = string_to_task(buffer);
+   task * new_task;
+    while((new_task = string_to_task()))
+     {
         queue_push(task_queue, new_task);
     }
     task * empty_task = (task *) malloc(sizeof(task));
-    strcpy(empty_task->username, "emp_task");
+    empty_task->username = "emp_task";
     queue_push(task_queue, empty_task);
 }
 
@@ -133,6 +151,7 @@ void process_task(void * data) {
             pthread_mutex_lock(&lock);
             queue_empty = 1;
             pthread_mutex_unlock(&lock);
+            free(pw_task);
             return;
         }
 
@@ -166,6 +185,11 @@ void process_task(void * data) {
         } else {
             thr_data->numFailed++;
         }
+
+        
+        free(end_pw);
+        free(pw_task->username);
+        free(pw_task);
 
         pthread_mutex_lock(&lock);
         char should_return = queue_empty;
@@ -206,6 +230,11 @@ int start(size_t thread_count) {
     join_workers(thread_count);
 
     printSummary(thread_count);
+
+    free(t_data);
+    queue_destroy(task_queue);
+    pthread_mutex_destroy(&lock);
+
     return 0; // DO NOT change the return code since AG uses it to check if your
               // program exited normally
 }
