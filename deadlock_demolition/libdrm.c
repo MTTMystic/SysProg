@@ -6,6 +6,7 @@
 #include "libdrm.h"
 #include "set.h"
 #include <pthread.h>
+#include <stdio.h>
 //global ra graph for deadlock prevention
 static graph * ra_graph;
 //mutex to prevent concurrent modifications to ra graph
@@ -28,46 +29,53 @@ int vector_index_of(vector * v, void * elem) {
     return -1;
 }
 
-bool cycleHelper(void * vertex, vector * visited, vector * recStack) {
-    vector_push_back(visited, vertex);
-    vector_push_back(recStack, vertex);
-
-    int rec_idx = vector_index_of(recStack, vertex);
+bool cycleHelper(void * vertex, int idx, vector * vertices, bool * visited, bool * recStack) {
+    visited[idx] = true;
+    recStack[idx] = true;
 
     vector * neighbors = graph_neighbors(ra_graph, vertex);
 
     for (size_t n_idx = 0; n_idx < vector_size(neighbors); n_idx++) {
         void * neighbor = vector_get(neighbors, n_idx);
-        bool alreadyVisited = vector_index_of(visited, neighbor) != -1;
-        bool rec_result = cycleHelper(neighbor, visited, recStack);
+        int neighbor_vidx = vector_index_of(vertices, neighbor);
+        bool alreadyVisited = visited[neighbor_vidx] == true;
+        bool rec_result = cycleHelper(neighbor, neighbor_vidx, vertices, visited, recStack);
 
         if (!alreadyVisited && rec_result) {
+            vector_destroy(neighbors);
             return true;
-        } else if (vector_index_of(recStack, neighbor) != -1) {
+        } else if (recStack[neighbor_vidx] == true) {
+            vector_destroy(neighbors);
             return true;
         }
     }
 
-    vector_erase(recStack, rec_idx);
+    recStack[idx] = false;
+    vector_destroy(neighbors);
     return false;
 }
 
 bool detectCycle() {
-    vector * visited = shallow_vector_create();
-    vector * rec_stack = shallow_vector_create();
-
     vector * vertices = graph_vertices(ra_graph);
+    size_t n_vertices = vector_size(vertices);
 
-    for (size_t idx = 0; idx < vector_size(vertices); idx++) {
+    bool visited[n_vertices];
+    bool rec_stack[n_vertices];
+
+    for (size_t i = 0; i < n_vertices; i++) {
+        visited[i] = false;
+        rec_stack[i] = false;
+    }
+
+    for (size_t idx = 0; idx < n_vertices; idx++) {
         void * current_vtx = vector_get(vertices, idx);
-        if (cycleHelper(current_vtx, visited, rec_stack)) {
+        if (cycleHelper(current_vtx, idx, vertices, visited, rec_stack)) {
+            vector_destroy(vertices);
             return true;
         }
     }
 
-    vector_destroy(visited);
-    vector_destroy(rec_stack);
-
+    vector_destroy(vertices);
     return false;
 }
 
@@ -78,6 +86,7 @@ drm_t *drm_init() {
         ra_graph = shallow_graph_create();
     }
 
+    graph_add_vertex(ra_graph, (void *) new_drm);
     pthread_mutex_init(&ts_mut, NULL);
     pthread_mutex_init(&new_drm->mut, NULL);
     new_drm->holder = NULL; //no thread currently holds the lock
@@ -114,7 +123,7 @@ int drm_post(drm_t *drm, pthread_t *thread_id) {
 int drm_wait(drm_t *drm, pthread_t *thread_id) {
     //check that the given thread does not already own the lock
     bool thread_in_rag = graph_contains_vertex(ra_graph, (void *) thread_id);
-
+    
     pthread_mutex_lock(&ts_mut); //prevent concurrent graph changes
     bool thread_owns_lock = thread_in_rag && graph_adjacent(ra_graph, (void *) drm, (void *) thread_id);
     pthread_mutex_unlock(&ts_mut); //prevent concurrent graph changes
