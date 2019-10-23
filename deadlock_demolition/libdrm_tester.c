@@ -70,7 +70,10 @@ void deadlock_test_p1(void * tid) {
     //try to lock drm1
     int p1_r2_result = drm_wait(drm1, t_id);
     printf("result of p1 trying to lock r2 was: %d\n", p1_r2_result);
-}
+    printf("trying to unlock r1\n");
+    drm_post(drm0, t_id);
+    printf("unlocked r1\n");
+}   
 
 void deadlock_test_p2(void * tid) {
     pthread_t * t_id = (pthread_t *) tid;
@@ -85,6 +88,9 @@ void deadlock_test_p2(void * tid) {
     printf("p2 trying to lock drm0\n");
     int p2_r1_result = drm_wait(drm0, t_id);
     printf("result of p2 trying to lock r1 was: %d\n", p2_r1_result);
+    printf("trying to unlock r2\n");
+    drm_post(drm1, t_id);
+    printf("unlocked r2\n");
 }
 
 int main() {
@@ -118,13 +124,13 @@ int main() {
     
     printf("----- deadlock prevention -----\n");
 
-    //pthread_t test_thread4;
-    //pthread_t test_thread5;
+    pthread_t test_thread4;
+    pthread_t test_thread5;
 
-    //pthread_create(&test_thread4, NULL, (void *) deadlock_test_p1, &test_thread4);
-    //pthread_create(&test_thread5, NULL, (void *) deadlock_test_p2, &test_thread5);
-    //pthread_join(test_thread4, NULL);
-    //pthread_join(test_thread5, NULL);
+    pthread_create(&test_thread4, NULL, (void *) deadlock_test_p1, &test_thread4);
+    pthread_create(&test_thread5, NULL, (void *) deadlock_test_p2, &test_thread5);
+    pthread_join(test_thread4, NULL);
+    pthread_join(test_thread5, NULL);
     
     return 0;
 }
