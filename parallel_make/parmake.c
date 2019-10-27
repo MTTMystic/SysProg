@@ -58,8 +58,11 @@ int cycleHelper(char * target, int t_idx, vector * targets, char visited[], char
             }
             
         }
+
+        vector_destroy(neighbors);
     }
 
+    
     rec_stack[t_idx] = 0;
     return 0;
 }
@@ -77,6 +80,7 @@ int detectCycle(char * target) {
 
     int t_idx = vector_idx_of(targets, target);
     int hasCycle = cycleHelper(target, t_idx, targets, visited, rec_stack);
+    
     vector_destroy(targets);
     return hasCycle;
 }
@@ -120,11 +124,13 @@ int newer_file_change(rule_t * rule) {
         dep_newer = (rule_mtim.tv_sec < dep_mtim.tv_sec) || (rule_mtim.tv_nsec < dep_mtim.tv_nsec);
 
         if (dep_newer) {
+            vector_destroy(deps);
             return 1;
         }
     
     }
 
+    vector_destroy(deps);
     return 0;
 }
 
@@ -203,5 +209,6 @@ int parmake(char *makefile, size_t num_threads, char **targets) {
 
     satisfy_goal_rules();
 
+    graph_destroy(dep_graph);
     return 0;
 }
