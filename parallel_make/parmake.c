@@ -201,6 +201,7 @@ void satisfy_goal_rules() {
 
     vector_destroy(goal_rules);
 }
+
 int parmake(char *makefile, size_t num_threads, char **targets) {
     // good luck!
 
