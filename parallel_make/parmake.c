@@ -20,7 +20,8 @@
 static graph * dep_graph;
 static set * rules;
 static pthread_mutex_t rules_lock = PTHREAD_MUTEX_INITIALIZER;
-static pthread_cond_t  rule_cv = PTHREAD_COND_INITIALIZER;
+static pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
+static  pthread_cond_t  rule_cv = PTHREAD_COND_INITIALIZER;
 
 static pthread_t * workers;
 
@@ -151,9 +152,9 @@ int newer_file_change(rule_t * rule) {
 void parse_targets_helper(char * target) {
     rule_t * rule = (rule_t *) graph_get_vertex_value(dep_graph, target);
 
-    if (rule->state == -1) {
-        return; 
-    }
+    //if (rule->state == -1) {
+        //return; 
+    //}
 
     set_add(rules, rule);
     vector * neighbors = graph_neighbors(dep_graph, target);
@@ -198,6 +199,7 @@ void drop_cyclic_goals() {
             print_cycle_failure(target);
         }
     }
+    vector_destroy(goals);
 }
 
 void clear_rules() {
@@ -212,6 +214,7 @@ void clear_rules() {
 }
 
 void check_rule(rule_t * rule) {
+    pthread_mutex_lock(&lock);
     if (rule->state != 0) {
         return;
     }
@@ -267,7 +270,7 @@ void execute_rule(rule_t * rule) {
 
     if (is_fod(rule) && depends_on_fod(rule)) {
         if (!newer_file_change(rule)) {
-            rule->state = 3;
+            rule->state = 0;
             return;
         }
     }
@@ -300,27 +303,13 @@ void worker_loop() {
         rule_t * exec_rule = NULL;
         
         while (1) {
+            clear_rules();
             worker_exit();
             size_t idx = 0;
             vector * rules_vec = set_elements(rules);
-            for(size_t r_idx = 0; r_idx <  vector_size(rules_vec); r_idx++) {
-                rule_t * current = vector_get(rules_vec, idx);
-                check_rule(current);
+            exec_rule = find_rule();
 
-                if (current->state == -1) {
-                    set_remove(rules, current);
-                } else if (current->state == 0) {
-                    idx++;
-                } else if (current->state == 1) {
-                    set_remove(rules, current);
-                } else if (current->state == 3 ) {
-                    exec_rule = current;
-                    break;
-                } else if (current->state == 4) {
-                    set_remove(rules, current);
-                }
-            }
-
+            vector_destroy(rules_vec);
             if (exec_rule == NULL) {
                 worker_exit();
                 pthread_cond_wait(&rule_cv, &rules_lock);
@@ -358,6 +347,7 @@ int parmake(char *makefile, size_t num_threads, char **targets) {
     graph_destroy(dep_graph);
     set_destroy(rules);
     pthread_mutex_destroy(&rules_lock);
+    pthread_mutex_destroy(&lock);
     pthread_cond_destroy(&rule_cv);
 
     return 0;
