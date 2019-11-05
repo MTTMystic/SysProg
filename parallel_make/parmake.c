@@ -305,7 +305,6 @@ void worker_loop() {
         while (1) {
             clear_rules();
             worker_exit();
-            size_t idx = 0;
             vector * rules_vec = set_elements(rules);
             exec_rule = find_rule();
 
