@@ -10,6 +10,24 @@
 #include <sys/wait.h>
 #include <fcntl.h>
 
+static int * mapper_pipes;
+static pid_t * mapper_ids;
+
+/**TODO: replace "exit(code)" with cleanup!*/
+
+void exit_cleanup(int exit_code) {
+    if (mapper_pipes) {
+        free(mapper_pipes);
+    }
+
+    if (mapper_ids) {
+        free(mapper_ids);
+    }
+
+    exit(exit_code);
+}
+
+
 /**
  * Simple helper function to create a splitter process.
  * @param input_file
@@ -26,15 +44,16 @@ void splitter_exec(char * input_file, int num_chunks, int chunk_idx, int out_pip
     //create child process for splitter
     pid_t fork_id = fork();
 
+    //fork failed
     if (fork_id == -1) {
-        exit(1);
+        exit_cleanup(1);
     }
 
     //subprocess
     if (fork_id == 0) {
         int replace_result = dup2(out_pipe, 1); //try to replace stdout with given output fd
         if (replace_result == -1) {
-            exit(1);
+            exit_cleanup(1); //replace failed
         }
 
         //close + destroy duplicated fds
@@ -51,7 +70,7 @@ void splitter_exec(char * input_file, int num_chunks, int chunk_idx, int out_pip
 
         //exec splitter
         execlp("./splitter", "./splitter", input_file, num_chunks_str, chunk_idx_str, NULL);
-        exit(1);
+        exit_cleanup(1);
     }   
 }
 
@@ -94,9 +113,8 @@ void exec_helper(char * exe_name, int in_pipe, int out_pipe, int * fork_id) {
         descriptors_closeall();
         descriptors_destroy();
 
-
         execlp(exe_name, exe_name, NULL);
-        exit(1);
+        exit(1); //exec failed
 
 
     }
@@ -124,7 +142,7 @@ int main(int argc, char **argv) {
 
     // Create an input pipe for each mapper.
     int pipes_size = 2 * n_mappers * sizeof(int); //need 2 fds (ints) per pipe per mapper
-    int * mapper_pipes = malloc(pipes_size);
+    mapper_pipes = malloc(pipes_size);
 
     int idx = 0;
     //create pipes
@@ -132,7 +150,7 @@ int main(int argc, char **argv) {
         int pipe_idx = idx * 2; //read end of pipe always at even indices
         int pipe_result = pipe2(mapper_pipes + pipe_idx, O_CLOEXEC);
         if (pipe_result == -1) {
-            exit(1);
+            exit_cleanup(1);
         }
 
         //track newly created pipes as fds
@@ -144,7 +162,7 @@ int main(int argc, char **argv) {
     int reducer_pipe[2]; 
     int reducer_pipe_result = pipe2(reducer_pipe, O_CLOEXEC);
     if (reducer_pipe_result == -1) {
-        exit(1);
+        exit_cleanup(1);
     }
 
     //track reducer pipe as fd
@@ -154,7 +172,7 @@ int main(int argc, char **argv) {
     // Open the output file.
     int out_fd = open(output_file_name, O_WRONLY | O_CREAT, S_IRUSR | S_IWUSR);
     if (out_fd == -1) {
-        exit(1);
+        exit_cleanup(1);
     }
 
     descriptors_add(out_fd);
@@ -162,10 +180,11 @@ int main(int argc, char **argv) {
     // Start a splitter process for each mapper.
     idx = 0;
     for (; idx < n_mappers; idx++) {
-        splitter_exec(input_file_name, n_mappers, idx, mapper_pipes[(idx * 2) + 1]); //direct splitter output to write end
+        splitter_exec(input_file_name, n_mappers, idx, mapper_pipes[(idx * 2) + 1]); //direct splitter output to write end of mapper pipe
     }
     // Start all the mapper processes.
-    pid_t * mapper_ids = malloc(sizeof(pid_t) * n_mappers); //track pids for each map subproc
+    mapper_ids = malloc(sizeof(pid_t) * n_mappers); //track pids for each map subproc
+    
     idx = 0;
     for (; idx < n_mappers; idx++) {
         //mark input as read end of mapper pipe
@@ -179,12 +198,32 @@ int main(int argc, char **argv) {
     //mark output as fd for given output file
     exec_helper(reducer_exe, reducer_pipe[0], out_fd, &reducer_id);
     // Wait for the reducer to finish.
-    int status;
-    int wait_result = waitpid(reducer_id, &status, 0);
+    int reducer_status;
+    int wait_result = waitpid(reducer_id, &reducer_status, 0);
     if (wait_result == -1) {
-        exit(1);
+        exit_cleanup(1); 
     }
+
+    
     // Print nonzero subprocess exit codes.
+
+    idx = 0;
+    for (; idx < n_mappers; idx++) {
+        int mapper_status;
+        int wait_ret = waitpid(mapper_ids[idx], &mapper_status, 0);
+        if (wait_ret == -1) {
+            exit_cleanup(1);
+        }
+
+        if (WIFEXITED(mapper_status) && WEXITSTATUS(mapper_status) != 0) {
+            print_nonzero_exit_status(mapper_exe, WEXITSTATUS(mapper_status));
+        }
+    }
+
+
+    if (WIFEXITED(reducer_status) && WEXITSTATUS(reducer_status) != 0) {
+        print_nonzero_exit_status(reducer_exe, WEXITSTATUS(reducer_status));
+    }
 
     // Count the number of lines in the output file.
 
