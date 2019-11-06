@@ -138,7 +138,7 @@ int main(int argc, char **argv) {
     
 
     int n_mappers = atoi(n_mappers_str);
-    printf("%d\n", n_mappers);
+    //printf("%d\n", n_mappers);
 
     // Create an input pipe for each mapper.
     int pipes_size = 2 * n_mappers * sizeof(int); //need 2 fds (ints) per pipe per mapper
@@ -194,9 +194,14 @@ int main(int argc, char **argv) {
 
     // Start the reducer process.
     pid_t reducer_id;
+
     //mark input as read end of reducer pipe
     //mark output as fd for given output file
     exec_helper(reducer_exe, reducer_pipe[0], out_fd, &reducer_id);
+
+    descriptors_closeall();
+    descriptors_destroy();
+    
     // Wait for the reducer to finish.
     int reducer_status;
     int wait_result = waitpid(reducer_id, &reducer_status, 0);
@@ -226,6 +231,9 @@ int main(int argc, char **argv) {
     }
 
     // Count the number of lines in the output file.
+    print_num_lines(output_file_name);
+    
+    exit_cleanup(0);
 
     return 0;
 }
