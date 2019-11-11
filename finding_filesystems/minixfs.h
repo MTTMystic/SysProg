@@ -185,7 +185,13 @@ inode *minixfs_create_inode_for_path(file_system *fs, const char *path);
  *    On failure return -1
  *      If this functions fails because path doesn't exist,
  *      set errno to ENOENT
- *
+ * 
+ * -Check file exists at path (get_inode)
+ * -Mask upper 7 bits of new_permissions with 0s
+ * -Mask lower 9 bits of mode with 0s
+ * -new_mode = masked_mode | masked_permissions
+ * -update file ctim
+ * 
  */
 int minixfs_chmod(file_system *fs, char *path, int new_permissions);
 
