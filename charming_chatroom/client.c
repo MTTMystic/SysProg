@@ -17,6 +17,7 @@
 #include "chat_window.h"
 #include "utils.h"
 
+static struct addrinfo hints, *result;
 static volatile int serverSocket;
 static pthread_t threads[2];
 
@@ -24,14 +25,24 @@ void *write_to_server(void *arg);
 void *read_from_server(void *arg);
 void close_program(int signal);
 
+
 /**
  * Shuts down connection with 'serverSocket'.
  * Called by close_program upon SIGINT.
  */
 void close_server_connection() {
     // Your code here
+    shutdown(serverSocket, SHUT_RDWR);
+    close(serverSocket);
+
+    
 }
 
+void exit_on_fail() {
+    freeaddrinfo(&hints);
+    freeaddrinfo(result);
+    exit(1);
+}
 /**
  * Sets up a connection to a chatroom server and returns
  * the file descriptor associated with the connection.
@@ -42,17 +53,30 @@ void close_server_connection() {
  * Returns integer of valid file descriptor, or exit(1) on failure.
  */
 int connect_to_server(const char *host, const char *port) {
-    /*QUESTION 1*/
-    /*QUESTION 2*/
-    /*QUESTION 3*/
+    //---------getaddrinfo-----------
+    //struct addrinfo hints, *result;
+    memset(&hints, 0, sizeof(struct addrinfo)); //clear values in hints
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
 
-    /*QUESTION 4*/
-    /*QUESTION 5*/
-
-    /*QUESTION 6*/
-
-    /*QUESTION 7*/
-    return -1;
+    int gai_ret = getaddrinfo(host, port, &hints, &result);
+    if (gai_ret != 0) {
+        perror("failed on getaddrinfo\n");
+        exit_on_fail();
+    }
+   
+    //-----------establish connection--------
+    int socket_fd = socket(AF_INET, SOCK_STREAM, 0);
+    int connect_ret = connect(socket_fd, result->ai_addr, result->ai_addrlen);
+    if (connect_ret == -1) {
+        perror("failed to establish connection\n");
+        exit_on_fail();
+    }
+    
+    freeaddrinfo(&hints);
+    freeaddrinfo(result);
+    
+    return socket_fd;
 }
 
 typedef struct _thread_cancel_args {
