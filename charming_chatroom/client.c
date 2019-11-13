@@ -39,6 +39,7 @@ void close_server_connection() {
 }
 
 void exit_on_fail() {
+    printf("exiting\n");
     close_program(SIGINT);
     exit(1);
 }
@@ -54,6 +55,7 @@ void exit_on_fail() {
 int connect_to_server(const char *host, const char *port) {
     //---------getaddrinfo-----------
     //struct addrinfo hints, *result;
+    printf("trying to connect..");
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(struct addrinfo)); //clear values in hints
     hints.ai_family = AF_INET;
@@ -61,7 +63,8 @@ int connect_to_server(const char *host, const char *port) {
 
     int ret = getaddrinfo(host, port, &hints, &result);
     if (ret != 0) {
-        perror("failed on getaddrinfo\n");
+        fprintf(stderr, "failed on getaddrinfo: %d\n", ret);
+        freeaddrinfo(result);
         exit_on_fail();
     }
    
@@ -70,9 +73,11 @@ int connect_to_server(const char *host, const char *port) {
     int connect_ret = connect(socket_fd, result->ai_addr, result->ai_addrlen);
     if (connect_ret == -1) {
         perror("failed to establish connection\n");
+        freeaddrinfo(result);
         exit_on_fail();
     }
     
+    freeaddrinfo(result);
     return socket_fd;
 }
 

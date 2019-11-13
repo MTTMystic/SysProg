@@ -137,10 +137,6 @@ void run_server(char *port) {
 
     //"giant while loop"
     while (!endSession) {
-
-        //only continue accepting connections if the limit isn't reached
-        if (clientsCount < MAX_CLIENTS) {
-             
              struct sockaddr clientaddr;
              socklen_t client_addr_size = sizeof(clientaddr);
 
@@ -151,9 +147,18 @@ void run_server(char *port) {
                  exit_on_failure();
              }
 
+            
              int client_idx = 0;
-
              pthread_mutex_lock(&mutex);
+             
+             clientsCount++;
+             
+             if (clientsCount > MAX_CLIENTS) {
+                 clientsCount--;
+                 close(client_fd);
+                 pthread_mutex_unlock(&mutex);
+                 continue;
+             }
              //update clients arr, clients count
              int idx = 0;
              for (; idx < MAX_CLIENTS; idx++) {
@@ -177,8 +182,6 @@ void run_server(char *port) {
                 exit_on_failure();
             }
 
-        }
-        
     }
 }
 
