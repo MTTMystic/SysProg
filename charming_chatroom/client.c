@@ -17,7 +17,7 @@
 #include "chat_window.h"
 #include "utils.h"
 
-static struct addrinfo hints, *result;
+
 static volatile int serverSocket;
 static pthread_t threads[2];
 
@@ -39,8 +39,7 @@ void close_server_connection() {
 }
 
 void exit_on_fail() {
-    freeaddrinfo(&hints);
-    freeaddrinfo(result);
+    close_program(SIGINT);
     exit(1);
 }
 /**
@@ -55,6 +54,7 @@ void exit_on_fail() {
 int connect_to_server(const char *host, const char *port) {
     //---------getaddrinfo-----------
     //struct addrinfo hints, *result;
+    struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(struct addrinfo)); //clear values in hints
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
@@ -72,9 +72,6 @@ int connect_to_server(const char *host, const char *port) {
         perror("failed to establish connection\n");
         exit_on_fail();
     }
-    
-    freeaddrinfo(&hints);
-    freeaddrinfo(result);
     
     return socket_fd;
 }
