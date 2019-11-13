@@ -59,8 +59,8 @@ int connect_to_server(const char *host, const char *port) {
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    int gai_ret = getaddrinfo(host, port, &hints, &result);
-    if (gai_ret != 0) {
+    int ret = getaddrinfo(host, port, &hints, &result);
+    if (ret != 0) {
         perror("failed on getaddrinfo\n");
         exit_on_fail();
     }

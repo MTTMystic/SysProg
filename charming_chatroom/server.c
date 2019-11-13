@@ -28,15 +28,23 @@ static volatile int clients[MAX_CLIENTS];
 
 static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void cleanup();
+
 /**
  * Signal handler for SIGINT.
  * Used to set flag to end server.
  */
-void close_server() {
-    endSession = 1;
-    // add any additional flags here you want.
+void close_server(int signal) {
+    if (signal == SIGINT) {
+        cleanup();
+        endSession = 1;
+    }
 }
 
+void exit_on_failure() {
+    close_server(SIGINT);
+    exit(1);
+}
 /**
  * Cleanup function called in main after `run_server` exits.
  * Server ending clean up (such as shutting down clients) should be handled
@@ -76,18 +84,102 @@ void cleanup() {
  */
 void run_server(char *port) {
     /*QUESTION 1*/
-    /*QUESTION 2*/
-    /*QUESTION 3*/
 
-    /*QUESTION 8*/
+    //get addrinfo for server 
+    struct addrinfo hints, *result;
+    memset(&hints, 0, sizeof(struct addrinfo));
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    
 
-    /*QUESTION 4*/
-    /*QUESTION 5*/
-    /*QUESTION 6*/
+    int ret = getaddrinfo(NULL, port, &hints, &result);
+    if (ret != 0) {
+        fprintf(stderr, "failed on getaddrinfo: %d\n", ret);
+        exit_on_failure(); //todo : call server exit function!
+    }
 
-    /*QUESTION 9*/
+    //setup a reusable socket
+    serverSocket = socket(AF_INET, SOCK_STREAM, 0);
+    if (serverSocket == -1) {
+        printf("socket() : ");
+        exit_on_failure();
+    }
 
-    /*QUESTION 10*/
+    int optval = 1;
+    ret = setsockopt(serverSocket, SOL_SOCKET, SO_REUSEPORT, &optval, sizeof(optval));
+
+    if (ret == -1) {
+        perror("setsockopt() : ");
+        exit_on_failure();
+    }
+    
+    
+    //bind the socket to the given port
+    ret = bind(serverSocket, result->ai_addr, result->ai_addrlen);
+    if (ret == -1 ) {
+        perror("bind(): ");
+        exit_on_failure();
+    }
+
+    //listen for up to MAX_CLIENTS connections
+    ret = listen(serverSocket, MAX_CLIENTS);
+
+    if (ret == -1) {
+        perror("listen() : ");
+        exit_on_failure();
+    }
+
+    //initialize fds for all clients (none yet)
+    int idx;
+    for (idx = 0; idx < MAX_CLIENTS; idx++) {
+        clients[idx] = -1;
+    }
+
+    //"giant while loop"
+    while (!endSession) {
+
+        //only continue accepting connections if the limit isn't reached
+        if (clientsCount < MAX_CLIENTS) {
+             
+             struct sockaddr clientaddr;
+             socklen_t client_addr_size = sizeof(clientaddr);
+
+             int client_fd = accept(serverSocket, &clientaddr, &client_addr_size);
+
+             if (client_fd == -1) {
+                 perror("failed to establish connection\n");
+                 exit_on_failure();
+             }
+
+             int client_idx = 0;
+
+             pthread_mutex_lock(&mutex);
+             //update clients arr, clients count
+             int idx = 0;
+             for (; idx < MAX_CLIENTS; idx++) {
+                 if (clients[idx] == -1) {
+                     clients[idx] = client_fd;
+                     client_idx = idx;
+                     break;
+                 }
+             }
+
+             clientsCount++;
+
+             pthread_mutex_unlock(&mutex);
+
+             //create a new thread to handle the client
+             pthread_t client_thread;
+             ret = pthread_create(&client_thread, NULL, process_client, (void*) &client_idx);
+
+            if (ret == -1) {
+                perror("phtread_create() : ");
+                exit_on_failure();
+            }
+
+        }
+        
+    }
 }
 
 /**
