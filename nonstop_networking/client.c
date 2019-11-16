@@ -28,20 +28,49 @@ static char ** args;
 static char * request_header;
 
 
+
 char **parse_args(int argc, char **argv);
 verb check_args(char **args);
+
+/**Constructs args_t struct from args char ** */
 void get_args_t(char ** args);
+/**Cleans up heap memory on exit.*/
 void cleanup();
 
+/**Directs client actions for each possible method.*/
 void method_dispatch(verb method);
+
+/**Opens file for writing for GET requests. 
+ * If the file does not exist, creates it with full (rwx) permissions.
+*/
 void setup_get_file();
+
+/**Opens file for reading for PUT requests.
+ * Will exit client if local file does not exist.*/
 void setup_put_file();
 
+void put_request();
+
+void get_request();
+
+/**Establishes connection to server.*/
 void connect_to_server();
 
-int write_to_server(char * buffer, size_t size);
+/**Writes buffer of [size] to server.
+ * Retries on write interrupt.
+ * Exits when encountering closed/disconnected server.
+ * Blocking.
+ * 
+ * Returns number of bytes written or -1 on failure.
+*/
+ssize_t write_to_server(char * buffer, size_t size);
+
+/**Fills buffer of [size] by reading chars from local file.
+ * Only useful for PUT requests.
+ * Returns number of bytes written to buffer.*/
 int fill_buffer_from_file(char * buffer, size_t size);
 
+/**Forms header string to send to server.*/
 void req_header_string();
 
 int main(int argc, char **argv) {
@@ -52,15 +81,11 @@ int main(int argc, char **argv) {
     verb method = check_args(args);
     LOG("checked args");
     get_args_t(args);
-    method_dispatch(method);
     req_header_string();
     connect_to_server();
     write_to_server(request_header, strlen(request_header));
-
-    if (method == PUT) {
-        ssize_t filesize = get_filesize(local_file_fd);
-        write_to_server((char *) &filesize, 8);
-    }
+    method_dispatch(method);
+    
 
     cleanup();
 }
@@ -176,16 +201,15 @@ void cleanup() {
     free(args);
     free(request_header);
 }
+
 void method_dispatch(verb method) {
     if (method == GET) {
         LOG("detected GET request");
-        setup_get_file();
+        get_request();
     } else if (method == PUT) {
         LOG("detected PUT request");
-        setup_put_file();
+        put_request();
     }
-
-
 }
 
 void setup_get_file() {
@@ -207,6 +231,7 @@ void setup_put_file() {
     char file_exists = access(args_o.local, R_OK) != -1;
     if (!file_exists) {
         LOG("local file does not exist");
+        cleanup();
         exit(1);
     }
 
@@ -214,6 +239,21 @@ void setup_put_file() {
     LOG("opened file for reading");
 }
 
+void get_request() {
+    setup_get_file();
+}
+void put_request() {
+    setup_put_file();
+    ssize_t filesize = get_filesize(local_file_fd);
+    write_to_server((char *) &filesize, 8); //send filesize to server
+    size_t bytes_written = 0;
+    char buffer[buf_size];
+    while (bytes_written < (size_t) filesize) {
+        size_t buffer_len = fill_buffer_from_file(buffer, buf_size);
+        bytes_written += write_to_server(buffer, buffer_len);
+    }
+
+}
 void connect_to_server() {
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(struct addrinfo));
@@ -279,7 +319,7 @@ void req_header_string() {
     printf("the request header so far is: %s", request_header);
 }
 
-int write_to_server(char * buffer, size_t size) {
+ssize_t write_to_server(char * buffer, size_t size) {
     int retval;
     size_t bytes_written = 0;
     while (bytes_written < size) {
@@ -304,4 +344,15 @@ int write_to_server(char * buffer, size_t size) {
     }
 
     return bytes_written;
+}
+
+int fill_buffer_from_file(char * buffer, size_t size) {
+    int read_result = read(local_file_fd, buffer, size);
+    if (read_result == -1) {
+        perror("failed to read from file");
+    }
+
+    LOG("read %d chars from file", read_result);
+    buffer[read_result] = 0;
+    return read_result;
 }
