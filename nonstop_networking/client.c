@@ -26,7 +26,7 @@ static int serverSocket;
 static int local_file_fd;
 static char ** args;
 static char * request_header;
-
+static char * response_header;
 
 
 char **parse_args(int argc, char **argv);
@@ -36,9 +36,6 @@ verb check_args(char **args);
 void get_args_t(char ** args);
 /**Cleans up heap memory on exit.*/
 void cleanup();
-
-/**Directs client actions for each possible method.*/
-void method_dispatch(verb method);
 
 /**Opens file for writing for GET requests. 
  * If the file does not exist, creates it with full (rwx) permissions.
@@ -65,6 +62,18 @@ void connect_to_server();
 */
 ssize_t write_to_server(char * buffer, size_t size);
 
+/**
+ * Reads [size - 1] bytes from server and stores them in provided buffer.
+ * Will automatically add null-terminating byte to end of buffer
+ * Retries on read interrupt.
+ * Exits when encountering closed server.
+ * Blocking.
+ * 
+ * Returns bytes written.
+ * 
+ */ 
+ssize_t read_from_server(char * buffer, size_t size);
+
 /**Fills buffer of [size] by reading chars from local file.
  * Only useful for PUT requests.
  * Returns number of bytes written to buffer.*/
@@ -73,6 +82,10 @@ int fill_buffer_from_file(char * buffer, size_t size);
 /**Forms header string to send to server.*/
 void req_header_string();
 
+void res_header_string();
+
+void fix_split_buffer(char * split, char * new_buf, size_t split_idx);
+
 int main(int argc, char **argv) {
     // Good luck!
     
@@ -80,13 +93,27 @@ int main(int argc, char **argv) {
     LOG("parsed args");
     verb method = check_args(args);
     LOG("checked args");
+
     get_args_t(args);
     req_header_string();
     connect_to_server();
     write_to_server(request_header, strlen(request_header));
-    method_dispatch(method);
-    
 
+    if (method == GET) {
+        //setup local file for writing
+        setup_get_file();
+    } else if (method == PUT) {
+        //setup local file, get + send size, send binary data
+        put_request();
+    }
+
+    //alert the server that we are done writing
+    shutdown(serverSocket, SHUT_WR);
+    //start reading response from server
+    char response_buffer[buf_size + 1];
+    read_from_server(response_buffer, buf_size + 1);
+    //try to parse header
+    res_header_string(response_buffer);
     cleanup();
 }
 
@@ -202,16 +229,6 @@ void cleanup() {
     free(request_header);
 }
 
-void method_dispatch(verb method) {
-    if (method == GET) {
-        LOG("detected GET request");
-        get_request();
-    } else if (method == PUT) {
-        LOG("detected PUT request");
-        put_request();
-    }
-}
-
 void setup_get_file() {
     //if the file exists, truncate the file
     //if it does not, create the file
@@ -239,21 +256,22 @@ void setup_put_file() {
     LOG("opened file for reading");
 }
 
-void get_request() {
-    setup_get_file();
-}
 void put_request() {
     setup_put_file();
     ssize_t filesize = get_filesize(local_file_fd);
     write_to_server((char *) &filesize, 8); //send filesize to server
+
     size_t bytes_written = 0;
     char buffer[buf_size];
+    //send file to server
+    //handling large files: read and send only 1204 bytes at a time
     while (bytes_written < (size_t) filesize) {
         size_t buffer_len = fill_buffer_from_file(buffer, buf_size);
         bytes_written += write_to_server(buffer, buffer_len);
     }
-
+    
 }
+
 void connect_to_server() {
     struct addrinfo hints, *result;
     memset(&hints, 0, sizeof(struct addrinfo));
@@ -263,13 +281,15 @@ void connect_to_server() {
     int ret = getaddrinfo(args_o.host, args_o.port, &hints, &result);
 
     if (ret != 0) {
-        LOG("failed to get address info");
+        perror("failed to get address info: ");
         freeaddrinfo(result);
-        return;
+        cleanup();
+        exit(1);
     }
 
      //-----------establish connection--------
 
+    LOG("attempting to connect....");
      //setup socket to be reusable
     serverSocket = socket(AF_INET, SOCK_STREAM, 0);
     int optval = 1;
@@ -278,11 +298,11 @@ void connect_to_server() {
     //try to connect
     int connect_ret = connect(serverSocket, result->ai_addr, result->ai_addrlen);
     if (connect_ret == -1) {
-        perror("failed to establish connection\n");
+        perror("failed to establish connection: ");
         freeaddrinfo(result);
         exit(1);
     }
-    
+    LOG("successfully connected to the server");
     freeaddrinfo(result);
 }
 
@@ -298,9 +318,14 @@ void req_header_string() {
     }
 
     header_len += strlen(args_o.method);
-    request_header[header_len] = ' ';
-    header_len++;
+
+    //space after VERB only needed for requests other than LIST
+    if (strcmp(args_o.method, "LIST")) {
+        request_header[header_len] = ' ';
+        header_len++;
+    }
     
+    //add name of remote file if it is applicable
     if (args_o.remote) {
         for (size_t idx = 0; idx < strlen(args_o.remote); idx++) {
           request_header[header_len + idx] = args_o.remote[idx];
@@ -309,14 +334,16 @@ void req_header_string() {
         header_len += strlen(args_o.remote);
 
     }
-  
+    
+    //add newline character
     request_header[header_len] = '\n';
     header_len++;
+    //null terminator for safety
     request_header[header_len] = 0;
 
     //shrink header
     request_header = realloc(request_header, header_len+1);
-    printf("the request header so far is: %s", request_header);
+    LOG("the request header so far is: %s", request_header);
 }
 
 ssize_t write_to_server(char * buffer, size_t size) {
@@ -326,7 +353,7 @@ ssize_t write_to_server(char * buffer, size_t size) {
         retval = write(serverSocket, buffer + bytes_written, size - bytes_written);
         if (retval == 0) {
             LOG("server closed");
-            exit(1);
+            break;
         }
 
         if (retval == -1 && errno == EINTR) {
@@ -336,11 +363,13 @@ ssize_t write_to_server(char * buffer, size_t size) {
         }
 
         if (retval == -1) {
-            LOG("write failed (not due to interrupt)");
+            perror("write failed: ");
+            cleanup();
             exit(1);
         }
 
         bytes_written += retval;
+        LOG("sent %d bytes to server", retval);
     }
 
     return bytes_written;
@@ -349,10 +378,70 @@ ssize_t write_to_server(char * buffer, size_t size) {
 int fill_buffer_from_file(char * buffer, size_t size) {
     int read_result = read(local_file_fd, buffer, size);
     if (read_result == -1) {
-        perror("failed to read from file");
+        perror("failed to read from file: ");
     }
 
-    LOG("read %d chars from file", read_result);
+    LOG("read %d bytes from file", read_result);
     buffer[read_result] = 0;
     return read_result;
+}
+
+ssize_t read_from_server(char * buffer, size_t size) {
+    size_t bytes_read = 0;
+    int retval = 0;
+    size_t target = size - 1;
+    while (bytes_read < target) {
+        retval = read(serverSocket, buffer + bytes_read, target - bytes_read);
+        if (retval == 0) {
+            LOG("server closed");
+            break;
+        }
+
+        if (retval == -1 && errno == EINTR) {
+            LOG("read was interrupted");
+            errno = 0;
+            continue;
+        }
+
+        if (retval == -1) {
+            perror("read failed :");
+            cleanup();
+            exit(1);
+           
+        }
+        LOG("recieved %d bytes from server", retval);
+        bytes_read += retval;
+    }
+
+    buffer[bytes_read] = 0;
+    return bytes_read;
+}
+
+void res_header_string(char * buffer) {
+    size_t status_len = strcspn(buffer, "\n");
+    size_t str_len = strlen(buffer);
+    size_t header_len = 0;
+
+    if (status_len == str_len) {
+        print_invalid_response();
+    }
+
+    response_header = malloc(buf_size + 1);
+    strncpy(response_header, buffer, status_len + 1);
+    header_len += status_len + 1;
+
+    
+
+    if (!strcmp(response_header, "ERROR\n")) {
+        size_t error_len = strcspn(buffer + header_len, "\n");
+        if (error_len == str_len) {
+            print_invalid_response();
+        }
+        strncpy(response_header + header_len, buffer + header_len, error_len + 1);
+        header_len += error_len + 1;
+    }
+
+    response_header[header_len] = 0;
+    
+    LOG("parsed response header is: %s", response_header);
 }
