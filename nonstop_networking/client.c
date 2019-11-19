@@ -22,11 +22,15 @@ typedef struct _args_t {
 
 
 static args_t args_o;
+static char ** args;
+
 static int serverSocket;
 static int local_file_fd;
-static char ** args;
+
 static char * request_header;
 static char * response_header;
+
+static char responseOk;
 
 
 char **parse_args(int argc, char **argv);
@@ -34,6 +38,7 @@ verb check_args(char **args);
 
 /**Constructs args_t struct from args char ** */
 void get_args_t(char ** args);
+
 /**Cleans up heap memory on exit.*/
 void cleanup();
 
@@ -79,12 +84,31 @@ ssize_t read_from_server(char * buffer, size_t size);
  * Returns number of bytes written to buffer.*/
 int fill_buffer_from_file(char * buffer, size_t size);
 
+/**Reads [size] from header and calls appropriate response handler for [VERB].
+ * Only applicable for GET or LIST requests.
+ */
+void response_dispatch(verb method, char * header_buffer, size_t init_received);
+
+/**
+ * Handles the response to a successful LIST request.
+ * Prints every filename on a separate line.
+ * @param header_buffer
+ * The buffer where the response header was read
+ * need to check for leftover bytes here before reading more from socket
+ * @param expected_bytes
+ * Total number of bytes expected for the LIST response, EXCLUDING header
+ * @param init_received
+ * Bytes received from the server in the initial read, which INCLUDES header
+ */ 
+void list_response(char * header_buffer, size_t expected_bytes, size_t init_received);
+
+void get_response(char * header_buffer, size_t expected_bytes, size_t init_received);
+
+
 /**Forms header string to send to server.*/
 void req_header_string();
 
 void res_header_string();
-
-void fix_split_buffer(char * split, char * new_buf, size_t split_idx);
 
 int main(int argc, char **argv) {
     // Good luck!
@@ -110,10 +134,34 @@ int main(int argc, char **argv) {
     //alert the server that we are done writing
     shutdown(serverSocket, SHUT_WR);
     //start reading response from server
-    char response_buffer[buf_size + 1];
-    read_from_server(response_buffer, buf_size + 1);
+    char header_buffer[buf_size + 1]; 
+
+    size_t bytesRead = read_from_server(header_buffer, buf_size + 1);
+    if (bytesRead == 0) {
+        print_invalid_response();
+        cleanup();
+        exit(1);
+    }
+
     //try to parse header
-    res_header_string(response_buffer);
+    res_header_string(header_buffer);
+
+    //print error message and exit if applicable
+    if (!responseOk) {
+        printf("%s", response_header);
+        cleanup();
+        exit(1);
+    }
+
+    //handle GET and LIST requests
+    //try to read 8 bytes of size_t from response
+    if (method == LIST || method == GET) {
+        response_dispatch(method, header_buffer, bytesRead);
+    } else {
+        print_success();
+    }
+    
+    
     cleanup();
 }
 
@@ -225,8 +273,18 @@ void get_args_t(char ** args) {
 };
 
 void cleanup() {
-    free(args);
-    free(request_header);
+    if (args) {
+        free(args);
+    }
+
+    if (request_header) {
+        free(request_header);
+    }
+    
+    if (response_header) {
+        free(response_header);
+    }
+    
 }
 
 void setup_get_file() {
@@ -306,46 +364,6 @@ void connect_to_server() {
     freeaddrinfo(result);
 }
 
-void req_header_string() {
-    request_header = malloc(buf_size + 1);
-    if (!request_header) {
-        LOG("failed to allocate memory for request header");
-    }
-    
-    size_t header_len = 0;
-    for (size_t idx = 0; idx < strlen(args_o.method); idx++) {
-        request_header[idx] = args_o.method[idx];
-    }
-
-    header_len += strlen(args_o.method);
-
-    //space after VERB only needed for requests other than LIST
-    if (strcmp(args_o.method, "LIST")) {
-        request_header[header_len] = ' ';
-        header_len++;
-    }
-    
-    //add name of remote file if it is applicable
-    if (args_o.remote) {
-        for (size_t idx = 0; idx < strlen(args_o.remote); idx++) {
-          request_header[header_len + idx] = args_o.remote[idx];
-        }
-
-        header_len += strlen(args_o.remote);
-
-    }
-    
-    //add newline character
-    request_header[header_len] = '\n';
-    header_len++;
-    //null terminator for safety
-    request_header[header_len] = 0;
-
-    //shrink header
-    request_header = realloc(request_header, header_len+1);
-    LOG("the request header so far is: %s", request_header);
-}
-
 ssize_t write_to_server(char * buffer, size_t size) {
     int retval;
     size_t bytes_written = 0;
@@ -409,12 +427,155 @@ ssize_t read_from_server(char * buffer, size_t size) {
             exit(1);
            
         }
-        LOG("recieved %d bytes from server", retval);
+        LOG("received %d bytes from server", retval);
         bytes_read += retval;
     }
 
-    buffer[bytes_read] = 0;
+    buffer[bytes_read + 1] = 0;
     return bytes_read;
+}
+
+void response_dispatch(verb method, char * header_buffer, size_t init_received) {
+    LOG("handling list or get method");
+    size_t size = 0;
+    strncpy((char *) &size, header_buffer + strlen(response_header), 8);
+    LOG("the expected number of bytes is: %zu", size);
+    if (method == LIST) {
+        list_response(header_buffer, size, init_received);
+    } else if (method == GET) {
+        get_response(header_buffer, size, init_received);
+    }
+
+}
+
+
+void list_response(char * header_buffer, size_t expected_bytes, size_t init_received) {
+    int leftover = init_received - strlen(response_header) - sizeof(size_t);
+    size_t bytes_received = 0;
+    if (leftover > 0) {
+        bytes_received += leftover;
+    }
+
+    //allocating 8KB of memory to store list
+    char * list_buf = malloc(8 * buf_size + 1);
+    list_buf[sizeof(list_buf) - 1] = 0;
+    char * leftover_buf = header_buffer + strlen(response_header) + sizeof(size_t);
+    
+    strncpy(list_buf, leftover_buf, leftover);
+    int retval = 2;
+    while (retval != 0) {
+        retval = read_from_server(list_buf + bytes_received, strlen(list_buf) - bytes_received + 1);
+        bytes_received += retval;
+    }
+
+    list_buf[bytes_received] = 0;
+    if (bytes_received < expected_bytes) {
+        print_too_little_data();
+    } else if (bytes_received > expected_bytes) {
+        print_received_too_much_data();
+    }
+
+    LOG("received enough data from server");
+
+    int fn_len = strcspn(list_buf, "\n");
+    char * buf_iter = list_buf;
+    do {
+        char filename[fn_len + 1];
+        strncpy(filename, buf_iter, fn_len);
+        filename[fn_len] = 0;
+        printf("%s\n", filename);
+        buf_iter += fn_len + 1;
+        fn_len = strcspn(buf_iter, "\n");
+    } while (buf_iter[fn_len] != 0);
+
+    
+    char filename[fn_len + 1];
+    strncpy(filename, buf_iter, fn_len);
+    filename[fn_len] = 0;
+    if (strlen(filename) > 0) {
+        printf("%s\n", filename);
+    }
+
+    free(list_buf);
+    
+}
+
+void get_response(char * header_buffer, size_t expected_bytes, size_t init_received) {
+    int leftover = init_received - strlen(response_header) - sizeof(size_t);
+    LOG("There are %d bytes leftover from original read", leftover);
+    size_t bytes_received = 0;
+    local_file_fd = open(args_o.local, O_WRONLY);
+    int retval = 2;
+    if (leftover > 0) {
+        bytes_received += leftover;
+        //write leftover bytes to file
+        char * leftover_buf = header_buffer + strlen(response_header) + sizeof(size_t);
+        retval = write(local_file_fd, leftover_buf, leftover);
+        if (retval == -1) {
+            perror("couldn't write to file: ");
+        }
+        LOG("wrote %d bytes to file", retval);
+    }
+
+    char file_buf[buf_size + 1];
+    retval = 2;
+    int bytes_written = 0;
+    while (retval != 0) {
+        retval = read_from_server(file_buf, buf_size);
+        if (retval > 0) {
+            bytes_written = write(local_file_fd, file_buf, retval);
+            LOG("wrote %d bytes to file",  bytes_written);
+            bytes_received += retval;
+        }
+    }
+
+    if (bytes_received > expected_bytes) {
+        print_received_too_much_data();
+    } else if (bytes_received < expected_bytes) {
+        print_too_little_data();
+    }
+
+    close(local_file_fd);
+}
+
+void req_header_string() {
+    request_header = malloc(buf_size + 1);
+    if (!request_header) {
+        LOG("failed to allocate memory for request header");
+    }
+    
+    size_t header_len = 0;
+    for (size_t idx = 0; idx < strlen(args_o.method); idx++) {
+        request_header[idx] = args_o.method[idx];
+    }
+
+    header_len += strlen(args_o.method);
+
+    //space after VERB only needed for requests other than LIST
+    if (strcmp(args_o.method, "LIST")) {
+        request_header[header_len] = ' ';
+        header_len++;
+    }
+    
+    //add name of remote file if it is applicable
+    if (args_o.remote) {
+        for (size_t idx = 0; idx < strlen(args_o.remote); idx++) {
+          request_header[header_len + idx] = args_o.remote[idx];
+        }
+
+        header_len += strlen(args_o.remote);
+
+    }
+    
+    //add newline character
+    request_header[header_len] = '\n';
+    header_len++;
+    //null terminator for safety
+    request_header[header_len] = 0;
+
+    //shrink header
+    request_header = realloc(request_header, header_len+1);
+    LOG("the request header so far is: %s", request_header);
 }
 
 void res_header_string(char * buffer) {
@@ -430,8 +591,6 @@ void res_header_string(char * buffer) {
     strncpy(response_header, buffer, status_len + 1);
     header_len += status_len + 1;
 
-    
-
     if (!strcmp(response_header, "ERROR\n")) {
         size_t error_len = strcspn(buffer + header_len, "\n");
         if (error_len == str_len) {
@@ -439,9 +598,14 @@ void res_header_string(char * buffer) {
         }
         strncpy(response_header + header_len, buffer + header_len, error_len + 1);
         header_len += error_len + 1;
+
+        responseOk = 0;
+    } else {
+        responseOk = 1;
     }
 
     response_header[header_len] = 0;
-    
+    response_header = realloc(response_header, header_len + 1);
     LOG("parsed response header is: %s", response_header);
 }
+
