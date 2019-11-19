@@ -135,6 +135,9 @@ int main(int argc, char **argv) {
     shutdown(serverSocket, SHUT_WR);
     //start reading response from server
     char header_buffer[buf_size + 1]; 
+    for (size_t idx = 0; idx < buf_size + 1; idx++) {
+        header_buffer[idx] = 0;
+    }
 
     size_t bytesRead = read_from_server(header_buffer, buf_size + 1);
     if (bytesRead == 0) {
@@ -587,7 +590,7 @@ void res_header_string(char * buffer) {
         print_invalid_response();
     }
 
-    response_header = malloc(buf_size + 1);
+    response_header = calloc(buf_size + 1, 1);
     strncpy(response_header, buffer, status_len + 1);
     header_len += status_len + 1;
 
