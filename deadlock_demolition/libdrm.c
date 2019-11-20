@@ -154,7 +154,7 @@ int drm_wait(drm_t *drm, pthread_t *thread_id) {
 
     pthread_mutex_unlock(&ts_mut);
 
-    //if no deadlock will happen, check that the lock is not already 'owned'
+   
     pthread_mutex_lock(&drm->mut);
     
     pthread_mutex_lock(&ts_mut);

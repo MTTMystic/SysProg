@@ -21,6 +21,28 @@ void mmu_read_from_virtual_address(mmu *this, addr32 virtual_address,
     assert(pid < MAX_PROCESS_ID);
     assert(num_bytes + (virtual_address % PAGE_SIZE) <= PAGE_SIZE);
     // TODO: Implement me!
+
+    vm_segmentations * proc_vm_segs = this->segmentations[pid];
+    int valid_address = address_in_segmentations(proc_vm_segs, virtual_address);
+
+    //verify that the given address is within the process' virtual memory segments
+    if (!valid_address) {
+        mmu_raise_segmentation_fault(this); //raise segfault otherwise
+        return;
+    }
+
+    page_table_entry * entry = tlb_get_pte(&this->tlb, virtual_address);
+    //no value cached for this memory address
+    if (entry == NULL) {
+        mmu_tlb_miss(this); //report tlb miss
+        int subpage_num = (virtual_address & 0xffc00000) >> 2 //get directory idx
+        page_directory_entry * p = this->directories[pid][directory_addr];
+        int frame_num = virtual_address & 0x003ff000;
+        addr32 frame_addr = (p->base_addr << 12) & (frame_num >> 20);
+        addr32 phys_frame_addr = *frame_addr;
+        
+    }
+
 }
 
 void mmu_write_to_virtual_address(mmu *this, addr32 virtual_address, size_t pid,

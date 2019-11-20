@@ -122,7 +122,7 @@ void run_server(char *port) {
     }
 
     //listen for up to MAX_CLIENTS connections
-    ret = listen(serverSocket, MAX_CLIENTS);
+    ret = listen(serverSocket, 10);
 
     if (ret == -1) {
         perror("listen() : ");

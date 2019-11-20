@@ -74,6 +74,7 @@ void queue_push(queue *this, void *data) {
     queue_node * new_node = malloc(sizeof(queue_node));
     new_node->data = data;
     new_node->next = NULL;
+    
     //handle case where queue is empty
     if (this->size == 0) {
         this->head = new_node;

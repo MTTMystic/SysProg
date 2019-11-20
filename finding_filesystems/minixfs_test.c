@@ -15,7 +15,7 @@ int main(int argc, char *argv[]) {
     off_t * offset = (off_t *) malloc(sizeof(off_t));
     *offset = 0;
     //test no offset
-    int bytes_written = minixfs_write(fs, "./goodies/hello.txt", buf, sizeof(buf), offset);
+    int bytes_written = minixfs_write(fs, "test.fs/goodies", buf, sizeof(buf), offset);
 
     printf("bytes written ? : %d", bytes_written);
     //free(offset);

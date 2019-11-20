@@ -77,6 +77,7 @@ int connect_to_server(const char *host, const char *port) {
         exit_on_fail();
     }
     
+    
     freeaddrinfo(result);
     return socket_fd;
 }

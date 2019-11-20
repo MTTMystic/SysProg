@@ -7,12 +7,18 @@ For all of these problems we want you to answer them in your own words to the be
 
 For these questions please read the [coursebook](http://cs241.cs.illinois.edu/coursebook/Ipc#translating-addresses)
 * What is a 'virtual address'?
+  * A virtual address refers to a location in virtual memory.
 * What is a 'physical address'?
+  * A physical address refers to a location in actual, physical memory (RAM)
 * Can two processes read and write to the same virtual address?
+  * No, because every process is isolated.
 * What is an MMU?
+  * The MMU is the part of the CPU that translates between virtual address and physical addresses. It also manages memory reads/writes.
 * What is a Page Table?
+  * A page table maps every page (index) to a frame by storing the base address of the frame corresponding to a page number.
   * What is the difference between a page and a frame?
     * Which is larger?
+      A page and a frame are both the same size. 
   * What is a virtual page number?
   * What is an offset?
 * How much physical memory (in GB) can a 32 bit machine address? Explain.

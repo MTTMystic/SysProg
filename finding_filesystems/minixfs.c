@@ -7,7 +7,7 @@
 #include <errno.h>
 #include <stdio.h>
 #include <string.h>
-
+#include <stdlib.h>
 /**
  * Virtual paths:
  *  Add your new virtual endpoint to minixfs_virtual_path_names
@@ -69,7 +69,10 @@ int minixfs_chown(file_system *fs, char *path, uid_t owner, gid_t group) {
 
 inode *minixfs_create_inode_for_path(file_system *fs, const char *path) {
     // Land ahoy!
-    if (!valid_filename(path) || get_inode(fs, path)) {
+    const char * filename;
+    inode * parent_inode = parent_directory(fs, path, &filename);
+
+    if (!valid_filename(filename) || get_inode(fs, path)) {
         return NULL;
     }
 
@@ -80,10 +83,11 @@ inode *minixfs_create_inode_for_path(file_system *fs, const char *path) {
     }
 
     inode * new_inode = &fs->inode_root[new_inode_num];
-
-    const char * filename;
-    inode * parent_inode = parent_directory(fs, path, &filename);
     
+    if (!parent_inode) {
+        return NULL;
+    }
+
     int parent_path_len = 0;
     char * path_dup = strdup(path);
     while (path_dup != filename) {
@@ -247,5 +251,6 @@ ssize_t minixfs_read(file_system *fs, const char *path, void *buf, size_t count,
     if (virtual_path)
         return minixfs_virtual_read(fs, virtual_path, buf, count, off);
     // 'ere be treasure!
+    
     return -1;
 }

@@ -313,13 +313,12 @@ void worker_loop() {
                 worker_exit();
                 pthread_cond_wait(&rule_cv, &rules_lock);
             } else {
-                break;
             }
         }
 
         pthread_mutex_unlock(&rules_lock);
         execute_rule(exec_rule);
-        pthread_cond_broadcast(&rule_cv);
+        pthread_cond_broadcdast(&rule_cv);
     }
 }
 
