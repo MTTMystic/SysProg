@@ -4,10 +4,16 @@
  */
 #pragma once
 #include <stddef.h>
+#include <stdbool.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <ctype.h>
+#include <string.h>
+#include <fcntl.h>
 #include <errno.h>
 #include <netdb.h>
-#include <signal.h>
-#include <stdio.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -23,21 +29,6 @@ typedef enum { GET, PUT, DELETE, LIST, V_UNKNOWN } verb;
 typedef enum {OK, ERROR} response;
 
 static const size_t buf_size = 1024;
-
-
-typedef struct _req_header_t {
-    verb method;
-    char filename[255];
-} req_header_t;
-
-typedef struct _res_header_t {
-    response status;
-    char err_msg[1024];
-} res_header_t;
-
-req_header_t * string_to_req_header(char buffer[buf_size]);
-
-verb string_to_verb(char * verb_str);
 
 ssize_t get_filesize(int fd);
 
