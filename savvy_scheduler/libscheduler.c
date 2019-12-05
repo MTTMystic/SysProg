@@ -25,6 +25,7 @@ typedef struct _job_info {
     int job_num; //number associated with job
     int priority; //job's current priority
     double runtime;
+    double ex_time;
 
     double robin_time;
 
@@ -120,10 +121,8 @@ int comparer_psrtf(const void *a, const void *b) {
     job_info * ja = (job_info *) job_a->metadata;
     job_info * jb = (job_info *) job_b->metadata;
 
-    time_t t;
-    time(&t);
-    double a_rt = ja->runtime - (t - ja->start_time);
-    double b_rt = jb->runtime - (t - jb->start_time);
+    double a_rt = ja->runtime - ja->ex_time;
+    double b_rt = jb->runtime - jb->ex_time;
     //remaining time = runtime - extime
     if (a_rt < b_rt) {
         return -1;
@@ -194,7 +193,9 @@ job *scheduler_quantum_expired(job *job_evicted, double time) {
     bool pre_scheme = pqueue_scheme == PPRI || pqueue_scheme == PSRTF || pqueue_scheme == RR;
     
     if (job_evicted) {
-        ((job_info *) job_evicted->metadata)->robin_time = time;
+        job_info * j = (job_info *) job_evicted->metadata;
+        j->ex_time = (time - j->start_time);
+        j->robin_time = time;
         if (!pre_scheme) {
             return job_evicted;
         }
