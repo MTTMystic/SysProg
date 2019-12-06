@@ -311,7 +311,7 @@ int write_to_socket(connection_t * client_data, char * buf, size_t n_bytes) {
     bool no_room_left = false;
 
     while (bytes_written < n_bytes) {
-        int retval = read(client_data->fd, buf + bytes_written, n_bytes - bytes_written);
+        int retval = write(client_data->fd, buf + bytes_written, n_bytes - bytes_written);
         
         if (retval == 0) {
             LOG("connection closed on %d", client_data->fd);
@@ -326,17 +326,15 @@ int write_to_socket(connection_t * client_data, char * buf, size_t n_bytes) {
                 case EAGAIN | EWOULDBLOCK:
                     no_room_left = true;
                 default:
-                    perror("read(): ");
+                    perror("write(): ");
                     break;
             }
         }
   
-        
-    
         bytes_written += retval;
     }
 
-    //LOG("read %zu bytes from %d", bytes_written, client_data->fd);
+    LOG("wrote %zu bytes to %d", bytes_written, client_data->fd);
     client_data->bytes_written += bytes_written;
     
     if (no_room_left) {
@@ -625,6 +623,37 @@ void send_ok(connection_t * client_data) {
     client_data->stat = CLOSED;
 }
 
+void send_err(connection_t * client_data) {
+    char * err = "ERROR\n";
+
+    int retval = write_to_socket(client_data, err, strlen(err));
+
+    char err_msg[255];
+
+    if (retval == (int)strlen(err)) {
+        switch(client_data->stat){
+            case ERR_REQ:
+                strcpy(err_msg, err_bad_request);
+                break;
+            case ERR_FS:
+                strcpy(err_msg, err_bad_file_size);
+                break;
+            case ERR_NOFILE:
+                strcpy(err_msg, err_no_such_file);
+                break;
+            default:
+                break;
+            
+        }
+    }
+
+    LOG("err_msg: %s", err_msg);
+    retval = write_to_socket(client_data, err_msg, strlen(err_msg));
+    LOG("wrote full errmsg: %d", (int)strlen(err_msg) == retval);
+    if (retval == (int)strlen(err_msg)) {
+        client_data->stat = CLOSED;
+    }
+}
 /**-----------STATE MANAGEMENT-----------*/
 void state_switch(connection_t * client_data) {
     switch(client_data->stat) {
@@ -641,18 +670,28 @@ void state_switch(connection_t * client_data) {
                 parse_fs(client_data);
                 break;
             case DEL_FILE:
+                break;
             case DATA_READ:
                 handle_put_request(client_data);
                 break;
             case RES_HEADER:
                send_ok(client_data);
-
+               break;
             case SEND_FS:
             case DATA_WRITE:
+                break;
             case ERR_REQ:
+                send_err(client_data);
+                break;
             case ERR_FS:
+                send_err(client_data);
+                break;
             case ERR_NOFILE:
+                send_err(client_data);
+                break;
             case ERR:
+                send_err(client_data);
+                break;
             default:
                 break;
         }
