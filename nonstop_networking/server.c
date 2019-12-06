@@ -27,7 +27,7 @@ typedef struct _connection_t {
     /**how many bytes are in the header*/
     size_t header_bytes;
 
-    char fs_buf[9];
+    char fs_buf[8];
 
     /**buffer for storing read/write data for files*/
     char buf[buf_size + 1];
@@ -53,6 +53,7 @@ static int maxEvents;
 static int clientCount;
 
 
+/**--------------------------HOUSEKEEPING & UTILITY------------------------*/
 void cleanup() {
     if (file_list) {
         vector_destroy(file_list);
@@ -88,88 +89,6 @@ void exit_fail() {
     exit(1);
 }
 
-void path_append_temp_dir(connection_t * client_data) {
-    char * filename = client_data->filename;
-    //alloc new buffer of [fn length + temp dir length +  byte for /] bytes
-    int new_path_len = strlen(filename) + strlen(temp_dir) + 1;
-
-    char * new_filename = malloc(new_path_len + 1);
-    strncpy(new_filename, temp_dir, strlen(temp_dir));
-    new_filename[strlen(temp_dir)] = '/';
-    strncpy(new_filename + strlen(temp_dir) + 1, filename, strlen(filename));
-    new_filename[new_path_len] = 0;
-    client_data->filename = new_filename;
-
-    LOG("new filename is: %s", new_filename);
-}
-
-void check_filename(connection_t * client_data) {
-    bool checkFileExists = client_data->method == GET || client_data->method == DELETE;
-    
-    if (checkFileExists) {
-        if (access(client_data->filename, R_OK) == -1) {
-            client_data->stat = ERR_NOFILE;
-            LOG("client tried to get/delete file that doesn't exist");
-            return;
-        }
-        //move to next state
-        //for get requests, send response header
-        //for delete requests, delete the file
-        client_data->stat = (client_data->method == GET) ? RES_HEADER : DEL_FILE;
-    } else if (client_data->method == PUT) {
-        int temp_fd = open(client_data->filename, O_CREAT | O_TRUNC, S_IRWXO | S_IRWXG | S_IRWXU);
-        if (temp_fd >= 0) {
-            LOG("opened file for writing");
-            client_data->stat = PARSE_FS;
-        } else {
-            perror("could not open/create file for PUT request: ");
-            client_data->stat = ERR;
-        }
-    }
-}
-
-
-//copy filesize into buffer after reading into header (if excess exists)
-//then operate only on buffer for initial reads!
- 
-/*attempts to read up to [n_bytes] bytes from socket into given buffer
- ASSUMES that buf has enough room for n_bytes + 1 (null terminator)*/
-int read_from_socket(int fd, char * buf, size_t n_bytes) {
-    size_t bytes_read = 0;
-    while (bytes_read < n_bytes) {
-        int retval = read(fd, buf + bytes_read, n_bytes - bytes_read);
-        
-        if (retval == 0) {
-            LOG("connection closed or no data available on %d", fd);
-            break;
-        }
-
-        if (retval == -1 && errno == EINTR) {
-            LOG("read was interrupted.");
-            continue;
-        }
-
-        if (retval == -1) {
-            LOG("read() on %d :", fd);
-            return -1;
-        }
-        
-        LOG("read %d bytes from %d", retval, fd);
-    
-        bytes_read += retval;
-    }
-
-    return bytes_read;
-}
-
-void read_header(connection_t * client_data) {
-    char * header = client_data->header + client_data->header_bytes;
-    int remaining_bytes = sizeof(client_data->header) - client_data->header_bytes - 1;
-    LOG("bytes remaining in header: %d", remaining_bytes);
-    int bytes_read = read_from_socket(client_data->fd, header, remaining_bytes);
-    client_data->header_bytes += bytes_read;
-}
-
 verb string_to_verb(char * m) {
     if (!strcmp(m, "GET")) {
         LOG("detected GET request");
@@ -189,52 +108,17 @@ verb string_to_verb(char * m) {
 
 }
 
-void parse_header(connection_t * client_data) {
-    //the header should end with a newline, so find # of chars before first newline
-    size_t cbnl = strcspn(client_data->header, "\n");
-    //if the buffer has filled but there is no newline character, ERR occurred
-    if (cbnl == client_data->header_bytes) {
-        if (client_data->header_bytes >= 1024) {
-            LOG("client sent too many bytes without newline -- no header?")
-            client_data->stat = ERR_REQ;
-        }
+/**-------------------------SOCKET MANAGEMENT-----------------*/
 
-        LOG("didn't find newline character");
-        return;
-    } 
-
-    size_t verb_len = strcspn(client_data->header, " ");
-    char method[verb_len + 1];
-    strncpy(method, client_data->header, verb_len);
-    method[verb_len] = 0;
-    LOG("verb string is: %s", method);
-    verb v = string_to_verb(method);
-    client_data->method = v;
-
-    if (client_data->method == V_UNKNOWN) {
-        LOG("could not parse verb %s, bad request.", method);
-        client_data->stat = ERR_REQ;
-        return;
+/**helper function to double the size of the epoll events arr*/
+void resize_events_arr() {
+    struct epoll_event * ep_events_new = realloc(ep_events, 2 * sizeof(ep_events));
+    if (ep_events_new) {
+        ep_events = ep_events_new;
+        maxEvents *= 2;
+    } else {
+        perror("realloc(): ");
     }
-
-    if (client_data->method != LIST) {
-        size_t fn_len = cbnl - verb_len - 1;
-        LOG("length of filename : %zu", fn_len);
-        char filename[fn_len + 1];
-        strncpy(filename, client_data->header + verb_len + 1, fn_len);
-        filename[fn_len] = 0;
-
-        LOG("parsed filename is: %s", filename);
-
-        client_data->filename = filename;
-        client_data->stat = FILE_CHECK;
-        return;
-    }
-    
-    //skip directly to forming LIST response if applicable
-    client_data->stat = RES_HEADER;
-    return;
-    
 }
 
 void setup_server_socket(char * port) {
@@ -295,17 +179,6 @@ void setup_server_socket(char * port) {
 
 }
 
-/**helper function to double the size of the epoll events arr*/
-void resize_events_arr() {
-    struct epoll_event * ep_events_new = realloc(ep_events, 2 * sizeof(ep_events));
-    if (ep_events_new) {
-        ep_events = ep_events_new;
-        maxEvents *= 2;
-    } else {
-        perror("realloc(): ");
-    }
-}
-
 connection_t * connection_setup(int fd) {
     connection_t * new_conn = (connection_t *) malloc(sizeof(connection_t));
     if (!new_conn) {
@@ -362,6 +235,129 @@ void accept_connections() {
    } while (new_cli_fd != -1);
 }
 
+/**------------------SOCKET READS/WRITES------------*/
+/*attempts to read up to [n_bytes] bytes from socket into given buffer
+ ASSUMES that buf has enough room for n_bytes + 1 (null terminator)*/
+int read_from_socket(int fd, char * buf, size_t n_bytes) {
+    size_t bytes_read = 0;
+    while (bytes_read < n_bytes) {
+        int retval = read(fd, buf + bytes_read, n_bytes - bytes_read);
+        
+        if (retval == 0) {
+            LOG("connection closed or no data available on %d", fd);
+            break;
+        }
+
+        if (retval == -1 && errno == EINTR) {
+            LOG("read was interrupted.");
+            continue;
+        }
+
+        if (retval == -1) {
+            LOG("read() on %d :", fd);
+            return -1;
+        }
+        
+        LOG("read %d bytes from %d", retval, fd);
+    
+        bytes_read += retval;
+    }
+
+    return bytes_read;
+}
+
+void read_header(connection_t * client_data) {
+    char * header = client_data->header + client_data->header_bytes;
+    int remaining_bytes = sizeof(client_data->header) - client_data->header_bytes - 1;
+    //LOG("bytes remaining in header: %d", remaining_bytes);
+    int bytes_read = read_from_socket(client_data->fd, header, remaining_bytes);
+    client_data->header_bytes += bytes_read;
+    client_data->bytes_read += bytes_read;
+}
+
+
+
+/**----------------REQUEST HANDLING------------*/
+void move_excess_header(connection_t * client_data) {
+    size_t excess_bytes = client_data->bytes_read - client_data->header_bytes;
+    char * excess_buf = client_data->header + client_data->header_bytes;
+    //only try to move filesize if the request was PUT and there's enough bytes
+    bool get_filesize = client_data->method == PUT && excess_bytes >= sizeof(size_t);
+    
+    //move 8 bytes of excess header to filesize buffer
+    if (get_filesize) {
+        LOG("found filesize in buffer");
+        memcpy(client_data->fs_buf, excess_buf, sizeof(size_t));
+        excess_buf += sizeof(size_t);
+        excess_bytes -= sizeof(size_t);
+    }
+
+    //move all remaining bytes to main data buffer
+    if (excess_bytes > 0) {
+        LOG("found %zu excess bytes from header read", excess_bytes);
+        memcpy(client_data->buf, excess_buf, excess_bytes);
+        client_data->buf_offset += excess_bytes;
+    }
+
+}
+
+void parse_header(connection_t * client_data) {
+    //the header should end with a newline, so find # of chars before first newline
+    size_t cbnl = strcspn(client_data->header, "\n");
+    //if the buffer has filled but there is no newline character, ERR occurred
+    if (cbnl == client_data->header_bytes) {
+        if (client_data->header_bytes >= 1024) {
+            LOG("client sent too many bytes without newline -- no header?")
+            client_data->stat = ERR_REQ;
+        }
+
+        LOG("didn't find newline character");
+        return;
+    } 
+
+    size_t verb_len = strcspn(client_data->header, " ");
+    char method[verb_len + 1];
+    strncpy(method, client_data->header, verb_len);
+    method[verb_len] = 0;
+    //LOG("verb string is: %s", method);
+    verb v = string_to_verb(method);
+    client_data->method = v;
+
+    //update header bytes to reflect which bytes are actually part of the header
+    //no data loss since bytes read also reflects total bytes in header buf
+    client_data->header_bytes = cbnl + 1;
+
+    if (client_data->method == V_UNKNOWN) {
+        LOG("could not parse verb %s, bad request.", method);
+        client_data->stat = ERR_REQ;
+        return;
+    }
+
+    if (client_data->method != LIST) {
+        size_t fn_len = cbnl - verb_len - 1;
+        //LOG("length of filename : %zu", fn_len);
+        char filename[fn_len + 1];
+        strncpy(filename, client_data->header + verb_len + 1, fn_len);
+        filename[fn_len] = 0;
+
+        //LOG("parsed filename is: %s", filename);
+        //move excess header bytes to appropriate buffers
+        move_excess_header(client_data);
+        //LOG("length of header: %zu", client_data->header_bytes );
+        client_data->filename = filename;
+        client_data->stat = FILE_CHECK;
+        return;
+    }
+    
+    //skip directly to forming LIST response if applicable
+    client_data->stat = RES_HEADER;
+    return;
+    
+}
+
+
+
+/**-----------STATE MANAGEMENT-----------*/
 void state_switch(connection_t * client_data) {
     switch(client_data->stat) {
             case PENDING:
