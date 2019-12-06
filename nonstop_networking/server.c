@@ -8,13 +8,7 @@
 #include "dictionary.h"
 #include <signal.h>
 #include <sys/epoll.h>
-
-/**
- *PENDING = accepted connection but header not parsed
- *ACTIVE = header parsed, can process request
- *CLOSED = connection ended 
- */
-typedef enum {PENDING, REQ, RES, ERR_REQ, ERR_FS, ERR_NOFILE, CLOSED} status;
+#include <math.h>
 
 typedef struct _connection_t {
     /**fd of client socket*/
@@ -27,8 +21,14 @@ typedef struct _connection_t {
     char * filename;
     /**[only applies for PUT requests] amt of binary data to be transferred*/
     size_t file_size;
+
     /**buffer for storing header info, including size*/
     char header[buf_size + 1];
+    /**how many bytes are in the header*/
+    size_t header_bytes;
+
+    char fs_buf[9];
+
     /**buffer for storing read/write data for files*/
     char buf[buf_size + 1];
     /**stores buffer offset*/
@@ -51,6 +51,7 @@ static volatile int epoll_fd;
 static struct epoll_event * ep_events;
 static int maxEvents;
 static int clientCount;
+
 
 void cleanup() {
     if (file_list) {
@@ -87,20 +88,6 @@ void exit_fail() {
     exit(1);
 }
 
-verb string_to_verb(char * method) {
-    if (!strcmp(method, "GET")) {
-        return GET;
-    } else if (!strcmp(method, "PUT")) {
-        return PUT;
-    } else if (!strcmp(method, "LIST")) {
-        return LIST;
-    } else if (!strcmp(method, "DELETE")) {
-        return DELETE;
-    } else {
-        return V_UNKNOWN;
-    }
-}
-
 void path_append_temp_dir(connection_t * client_data) {
     char * filename = client_data->filename;
     //alloc new buffer of [fn length + temp dir length +  byte for /] bytes
@@ -111,29 +98,38 @@ void path_append_temp_dir(connection_t * client_data) {
     new_filename[strlen(temp_dir)] = '/';
     strncpy(new_filename + strlen(temp_dir) + 1, filename, strlen(filename));
     new_filename[new_path_len] = 0;
-
     client_data->filename = new_filename;
 
-    //LOG("new filename is: %s", new_filename);
+    LOG("new filename is: %s", new_filename);
 }
 
 void check_filename(connection_t * client_data) {
-    if (client_data->method == GET || client_data->method == DELETE) {
-        int fileExists = access(client_data->filename, R_OK);
-        if (fileExists == -1) {
+    bool checkFileExists = client_data->method == GET || client_data->method == DELETE;
+    
+    if (checkFileExists) {
+        if (access(client_data->filename, R_OK) == -1) {
             client_data->stat = ERR_NOFILE;
-            LOG("client tried to download file that doesn't exist");
+            LOG("client tried to get/delete file that doesn't exist");
             return;
         }
+        //move to next state
+        //for get requests, send response header
+        //for delete requests, delete the file
+        client_data->stat = (client_data->method == GET) ? RES_HEADER : DEL_FILE;
     } else if (client_data->method == PUT) {
         int temp_fd = open(client_data->filename, O_CREAT | O_TRUNC, S_IRWXO | S_IRWXG | S_IRWXU);
-        if (temp_fd == -1) {
-            LOG("couldn't open or create file for PUT request");
+        if (temp_fd >= 0) {
+            LOG("opened file for writing");
+            client_data->stat = PARSE_FS;
+        } else {
+            perror("could not open/create file for PUT request: ");
+            client_data->stat = ERR;
         }
     }
 }
 
-//copy files into buffer after reading into header (if excess exists)
+
+//copy filesize into buffer after reading into header (if excess exists)
 //then operate only on buffer for initial reads!
  
 /*attempts to read up to [n_bytes] bytes from socket into given buffer
@@ -159,90 +155,86 @@ int read_from_socket(int fd, char * buf, size_t n_bytes) {
         }
         
         LOG("read %d bytes from %d", retval, fd);
+    
         bytes_read += retval;
     }
+
     return bytes_read;
 }
 
 void read_header(connection_t * client_data) {
-    int offset = strlen(client_data->header);
-    char * header_buf = client_data->header + offset;
-    int remaining_bytes = sizeof(client_data->header) - offset - 1;
-    int bytes_read = read_from_socket(client_data->fd, header_buf, remaining_bytes);
-    header_buf[bytes_read] = 0;
+    char * header = client_data->header + client_data->header_bytes;
+    int remaining_bytes = sizeof(client_data->header) - client_data->header_bytes - 1;
+    LOG("bytes remaining in header: %d", remaining_bytes);
+    int bytes_read = read_from_socket(client_data->fd, header, remaining_bytes);
+    client_data->header_bytes += bytes_read;
 }
 
-int parse_verb(connection_t * client_data) {
-    char * header = client_data->header;
-    size_t end_of_verb = strcspn(header, " ");
-    
-    char method[end_of_verb + 1];
-    strncpy(method, header, end_of_verb);
-    method[end_of_verb] = 0;
-
-    LOG("verb is: %s", method);
-
-    verb v = string_to_verb(method);
-    
-    //set err on badly formed verb
-    if (v == V_UNKNOWN && strlen(method) >= 7) {
-        client_data->stat = ERR_REQ;
-        return -1;    
+verb string_to_verb(char * m) {
+    if (!strcmp(m, "GET")) {
+        LOG("detected GET request");
+        return GET;
+    } else if (!strcmp(m, "PUT")) {
+        LOG("detected PUT request");
+        return PUT;
+    } else if (!strcmp(m, "LIST\n")) {
+        LOG("detected LIST request");
+        return LIST;
+    } else if (!strcmp(m, "DELETE")) {
+        LOG("detected DELETE request");
+        return DELETE;
     }
 
+    return V_UNKNOWN;
+
+}
+
+void parse_header(connection_t * client_data) {
+    //the header should end with a newline, so find # of chars before first newline
+    size_t cbnl = strcspn(client_data->header, "\n");
+    //if the buffer has filled but there is no newline character, ERR occurred
+    if (cbnl == client_data->header_bytes) {
+        if (client_data->header_bytes >= 1024) {
+            LOG("client sent too many bytes without newline -- no header?")
+            client_data->stat = ERR_REQ;
+        }
+
+        LOG("didn't find newline character");
+        return;
+    } 
+
+    size_t verb_len = strcspn(client_data->header, " ");
+    char method[verb_len + 1];
+    strncpy(method, client_data->header, verb_len);
+    method[verb_len] = 0;
+    LOG("verb string is: %s", method);
+    verb v = string_to_verb(method);
     client_data->method = v;
 
-    if (v == LIST) {
-        client_data->stat = REQ;
-    }
-
-    return 0;
-}
-
-int parse_fn(connection_t * client_data) {
-    char * header = client_data->header;
-    LOG("header so far is: %s", header);
-    size_t end_of_fn = strcspn(header, "\n");
-    size_t end_of_verb = strcspn(header, " ");
-
-    if (end_of_fn == strlen(header) && strlen(header) >= 1024) {
+    if (client_data->method == V_UNKNOWN) {
+        LOG("could not parse verb %s, bad request.", method);
         client_data->stat = ERR_REQ;
-        return -1;
+        return;
     }
 
-    size_t fn_len = end_of_fn - end_of_verb;
-    LOG("length of targeted filename is: %zu", fn_len);
-    char filename[fn_len + 1];
-    strncpy(filename, header + end_of_verb, fn_len);
-    filename[fn_len] = 0;
+    if (client_data->method != LIST) {
+        size_t fn_len = cbnl - verb_len - 1;
+        LOG("length of filename : %zu", fn_len);
+        char filename[fn_len + 1];
+        strncpy(filename, client_data->header + verb_len + 1, fn_len);
+        filename[fn_len] = 0;
 
-    LOG("targeted filename is: %s", filename);
+        LOG("parsed filename is: %s", filename);
 
-    client_data->stat = REQ;
-    client_data->filename = filename;
-    path_append_temp_dir(client_data);
-    check_filename(client_data);
-
-    return 0;
-}
-
-int parse_header(int fd) {
-    connection_t * conn_data = (connection_t *)(dictionary_get(connections, &fd));
-    
-    if (!conn_data) {
-        LOG("invalid fd");
-        return -1;
+        client_data->filename = filename;
+        client_data->stat = FILE_CHECK;
+        return;
     }
     
-    int verb_result = parse_verb(conn_data);
-
-    //parse the filename only if it is needed (not LIST request) and verb parsed
-    if (verb_result == 0 && conn_data->stat == PENDING) {
-        int fn_result = parse_fn(conn_data);
-        return fn_result;
-    }
-
-    return verb_result;
+    //skip directly to forming LIST response if applicable
+    client_data->stat = RES_HEADER;
+    return;
+    
 }
 
 void setup_server_socket(char * port) {
@@ -323,6 +315,11 @@ connection_t * connection_setup(int fd) {
 
     new_conn->fd = fd;
     new_conn->stat = PENDING;
+    new_conn->buf[1024] = 0;
+    new_conn->header[1024] = 0;
+    new_conn->file_size = pow(2, 8) - 1;
+    new_conn->header_bytes = 0;
+    new_conn->buf_offset = 0;
     dictionary_set(connections, (void *)&fd, (void *)new_conn);
 
     return new_conn;
@@ -365,25 +362,42 @@ void accept_connections() {
    } while (new_cli_fd != -1);
 }
 
+void state_switch(connection_t * client_data) {
+    switch(client_data->stat) {
+            case PENDING:
+                read_header(client_data);
+                if (client_data->header_bytes > 0) {
+                    parse_header(client_data);
+                }
+                break;
+            case FILE_CHECK:
+                //check_filename(client_data);
+                break;
+            case PARSE_FS:
+                //read_filesize(client_data);
+                break;
+            case DEL_FILE:
+            case DATA_READ:
+                //write_excess_data(client_data);
+                break;
+            case RES_HEADER:
+            case SEND_FS:
+            case DATA_WRITE:
+            case ERR_REQ:
+            case ERR_FS:
+            case ERR_NOFILE:
+            case ERR:
+            default:
+                break;
+        }
+}
+
 void ready_dispatch(struct epoll_event * events) {
     int idx = 0;
     for (; idx < clientCount; idx++) {
         struct epoll_event event = events[idx];
         connection_t * client_data = (connection_t *)(event.data.ptr);
-        if (client_data->stat == PENDING) {
-            read_header(client_data);
-            if (strlen(client_data->header) > 0) {
-                parse_header(client_data->fd);
-            }
-            
-        } else if (client_data->stat == REQ) {
-            //todo: add function to continue processing request
-            
-            //check_filename(client_data);
-
-        } else if(client_data->stat == RES) {
-            //todo: add function to handle response
-        }
+        state_switch(client_data);
     }
 }
 
