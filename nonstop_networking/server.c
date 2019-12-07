@@ -61,11 +61,7 @@ void close_connection(connection_t * client_data);
 int del_file(char * filename);
 /**--------------------------HOUSEKEEPING & UTILITY------------------------*/
 
-void cleanup() {
-    if (file_list && !vector_empty(file_list)) {
-        vector_destroy(file_list);
-    }
-
+void cleanup(int err) {
     if (connections) {
        for (int i = vector_size(connections) - 1; i >= 0; i--) {
            if (vector_get(connections, i)) {
@@ -83,19 +79,24 @@ void cleanup() {
         del_file(temp_dir);
     }
 
+    if (file_list && !vector_empty(file_list)) {
+        vector_destroy(file_list);
+    }
+
     close(epoll_fd);
+
+    exit(err);
 }
 
 void close_server(int signal) {
     if (signal == SIGINT) {
-        cleanup();
         endSession = true;
     }
 }
 
 void exit_fail() {
-    close_server(SIGINT);
-    exit(1);
+    endSession = true;
+    cleanup(1);
 }
 
 verb string_to_verb(char * m) {
@@ -835,6 +836,8 @@ void handle_list_request(connection_t * client_data) {
 }
 
 void handle_del_request(connection_t * client_data) {
+    int file_idx = file_exists(client_data->filename);
+    vector_erase(file_list, file_idx);
     int retval = del_file(client_data->filename);
     if (retval == -1) {
         client_data->stat = ERR;
