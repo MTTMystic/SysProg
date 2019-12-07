@@ -58,7 +58,7 @@ static volatile int epoll_fd;
 static int clientCount;
 
 void close_connection(connection_t * client_data);
-
+int del_file(char * filename);
 /**--------------------------HOUSEKEEPING & UTILITY------------------------*/
 
 void cleanup() {
@@ -72,12 +72,15 @@ void cleanup() {
                free(vector_get(connections, i));
            }
        }
-
-       vector_destroy(connections);
     }
 
     if (temp_dir) {
-        rmdir(temp_dir);
+        for (size_t i = 0; i < vector_size(file_list); i++) {
+            char * filename = vector_get(file_list, i);
+            del_file(filename);
+        }
+
+        del_file(temp_dir);
     }
 
     close(epoll_fd);
@@ -94,7 +97,6 @@ void exit_fail() {
     close_server(SIGINT);
     exit(1);
 }
-
 
 verb string_to_verb(char * m) {
     if (!strcmp(m, "GET")) {
@@ -113,6 +115,14 @@ verb string_to_verb(char * m) {
 
     return V_UNKNOWN;
 
+}
+
+int del_file(char * filename) {
+    int retval = remove(filename);
+    if (retval == -1) {
+        perror("remove(): ");
+    }
+    return retval;
 }
 
 /**-------------------------SOCKET MANAGEMENT-----------------*/
@@ -263,8 +273,7 @@ void close_connection(connection_t * client_data) {
  ASSUMES that buf has enough room for n_bytes + 1 (null terminator)*/
 int read_from_socket(connection_t * client_data, char * buf, size_t n_bytes) {
     size_t bytes_read = 0;
-    
-    LOG("bytes read was: %zu", client_data->bytes_read);
+
     bool no_data_left = false;
 
     while (bytes_read < n_bytes) {
@@ -295,7 +304,6 @@ int read_from_socket(connection_t * client_data, char * buf, size_t n_bytes) {
 
     LOG("read %zu bytes from %d", bytes_read, client_data->fd);
     client_data->bytes_read += bytes_read;
-    LOG("bytes_read is: %zu", client_data->bytes_read);
     if (buf == client_data->buf) {
         client_data->buf_offset += bytes_read;
     }
@@ -401,7 +409,7 @@ void move_excess_header(connection_t * client_data) {
         client_data->buf_offset += excess_bytes;
     }
 
-    LOG("bytes_read after moving excess header: %zu", client_data->bytes_read)
+    //LOG("bytes_read after moving excess header: %zu", client_data->bytes_read)
 }
 
 void path_append_temp_dir(connection_t * client_data) {
@@ -555,56 +563,43 @@ void parse_fs(connection_t * client_data) {
     client_data->stat = DATA_READ;
 }
 
-size_t write_buffer_to_file(connection_t * client_data) {
-    size_t bytes_written = 0;
-    
-    int file_idx = file_exists(client_data->filename);
-
-    if (file_idx == -1) {
-        LOG("oops, no such file exists on the server!");
-        create_file(client_data->filename);
-        file_idx = file_exists(client_data->filename);
-    }
-
+void write_buffer_to_file(connection_t * client_data) {
     int file_fd = open(client_data->filename, O_RDWR);
     
     if (file_fd == -1) {
-        perror("open() : ");
-        return 0;
+        perror("open() :");
+        client_data->stat = ERR;
     }
 
     if (lseek(file_fd, client_data->file_offset, SEEK_SET) == -1) {
-        perror("lseek(): ");
-        return 0;
+        perror("lseek() : ");
+        client_data->stat = ERR;
     }
 
-    while (bytes_written < client_data->buf_offset) {
+    int remaining_bytes = client_data->buf_offset;
+    int bytes_written = 0;
+    while (remaining_bytes > 0) {
         int retval = write(file_fd, client_data->buf, client_data->buf_offset);
+        
         if (retval == -1) {
-            perror("write() : ");
-            break;
+            perror("write(): ");
+            client_data->stat = ERR;
         }
 
+        int leftover = client_data->buf_offset - retval;
+        if (leftover) {
+            memmove(client_data->buf, client_data->buf + retval, leftover);
+        }
+
+        client_data->buf_offset -= retval;
+        remaining_bytes = client_data->buf_offset;
         bytes_written += retval;
     }
 
-    //LOG("wrote %zu bytes to file", bytes_written);
-    //LOG("buffer offset was: %zu", client_data->buf_offset);
-
-    if (client_data->buf_offset - bytes_written > 0) {
-        memmove(client_data->buf, client_data->buf + bytes_written, client_data->buf_offset - bytes_written);
-    } else {
-        memset(client_data->buf, 0, bytes_written);
-    }
-    
-    client_data->buf_offset -= bytes_written;
-
     client_data->file_offset += bytes_written;
+    close(file_fd);
 
-    //LOG("new buf_offset is: %zu", client_data->buf_offset);
-    //LOG("buf is now: %s", client_data->buf);
-
-    return bytes_written;
+    
 }
 
 void handle_put_request(connection_t * client_data) {
@@ -616,10 +611,12 @@ void handle_put_request(connection_t * client_data) {
     if (client_data->buf_offset > 0) {
         write_buffer_to_file(client_data);
     }
+    
     int retval = 0;
-    LOG("handling put request for some reason???");
+
     do {
-        retval = read_from_socket(client_data, client_data->buf, buf_size - 1);
+        int rem = buf_size - client_data->buf_offset;
+        retval = read_from_socket(client_data, client_data->buf + client_data->buf_offset, rem);
         write_buffer_to_file(client_data);
     } while (retval != -1 && !client_data->closed_read);
     
@@ -641,15 +638,39 @@ void handle_put_request(connection_t * client_data) {
     }
 }
 
-void send_fs(connection_t * client_data){
+/**--------------------RESPONSE HANDLERS------------*/
+size_t write_buffer_from_file(connection_t * client_data) {
+    size_t bytes_read = 0;
+    
     int file_fd = open(client_data->filename, O_RDONLY);
-    if (file_fd ==-1) {
-        perror("couldn't open(): ");
+
+    if (lseek(file_fd, client_data->file_offset, SEEK_SET) == -1) {
+        perror("lseek(): ");
         client_data->stat = ERR;
     }
+    
+    int remaining_space = buf_size - client_data->buf_offset;
+    int remaining_bytes = client_data->file_size - client_data->file_offset;
+
+    int n_bytes = remaining_bytes > remaining_space ? remaining_space : remaining_bytes;
+    LOG("space in buffer: %d", remaining_space);
+    LOG("bytes left to write: %d", remaining_bytes);
+    while (bytes_read < (size_t)n_bytes) {
+        int retval = read(file_fd, client_data->buf + client_data->buf_offset, n_bytes);
+        if (retval == -1) {
+            perror("read() : ");
+            break;
+        }
+
+        bytes_read += retval;
+        client_data->buf_offset += retval;
+    }
+
+    close(file_fd);
+    client_data->file_offset += bytes_read;
+    return bytes_read;
 }
 
-/**--------------------RESPONSE HANDLERS------------*/
 void send_ok(connection_t * client_data) {
     char * ok = "OK\n";
 
@@ -667,7 +688,7 @@ void send_ok(connection_t * client_data) {
                 client_data->stat = CLOSED;
                 break;
             case LIST:
-                client_data->stat = DATA_WRITE;
+                client_data->stat = SEND_FS;
                 break;
             default:
                 break;
@@ -707,6 +728,121 @@ void send_err(connection_t * client_data) {
     }
 }
 
+void send_fs(connection_t * client_data){
+    ssize_t s = 0;
+
+    if (client_data->method == GET) {
+         int file_fd = open(client_data->filename, O_RDONLY);
+         if (file_fd ==-1) {
+            perror("couldn't open(): ");
+            client_data->stat = ERR;
+        }
+
+        struct stat f_stat;
+        fstat(file_fd, &f_stat);
+        s =  f_stat.st_size;
+        close(file_fd);
+        client_data->file_size = s;
+    } else if (client_data->method == LIST) {
+        s = vector_size(file_list);
+    }
+   
+
+    int retval = write_to_socket(client_data, (char *)(&s), sizeof(ssize_t));
+    if (retval != -1) {
+        client_data->stat = DATA_WRITE;
+    }
+
+    
+}
+
+void handle_get_request(connection_t * client_data) {
+    size_t bytes_written = 0;
+    LOG("need to write: %zu bytes to client", client_data->file_size);
+    //loop - load buffer from file -> write to client -> clear buffer
+    while (bytes_written < client_data->file_size && !client_data->closed_write) {
+        LOG("writing buffer");
+        //load bytes from the file into client buffer
+        write_buffer_from_file(client_data);
+        
+        LOG("writing to socket");
+        //write client buffer to client socket
+        int retval = write_to_socket(client_data, client_data->buf, client_data->buf_offset);
+    
+        //retry on write failure
+        if (retval == -1) {
+            break;
+        }
+
+        //update bytes written
+        bytes_written += retval;
+
+        //compare buf offset to number of written bytes
+        int leftover_bytes = client_data->buf_offset - retval;
+        LOG("found %d leftover bytes", leftover_bytes);
+        if (leftover_bytes > 0) {
+            //move leftover bytes to front of buffer
+            memmove(client_data->buf, client_data->buf + retval, leftover_bytes);
+        }
+        
+        LOG("updating buf_offset")
+        //update buf offset
+        client_data->buf_offset -= retval;
+    }
+    
+    //close connection 
+    client_data->stat = CLOSED;
+    
+}
+
+void handle_list_request(connection_t * client_data) {
+    int retval = 0;
+    char files_list[2 * buf_size];
+    int list_len = 0;
+    //iterate over filenames
+    for(size_t i = 0; i < vector_size(file_list); i++) {
+        //for all elements except the first, add a newline char
+        if (i > 0) {
+            files_list[list_len] = '\n';
+            list_len++;
+        }
+
+        //copy filename to list
+        char * filename = vector_get(file_list, i);
+        strncpy(files_list + list_len, filename, strlen(filename));
+        list_len += strlen(filename);
+    }
+    
+    files_list[list_len] = 0;
+    
+    //write files list to client socket
+    size_t bytes_written = 0;
+    while (list_len - bytes_written > 0) {
+        retval = write_to_socket(client_data, files_list, list_len);
+        
+        if (retval == -1) {
+            continue;
+        }
+
+        if (client_data->closed_write) {
+            break;
+        }
+
+        bytes_written += retval;
+    }
+
+    client_data->stat = CLOSED;
+}
+
+void handle_del_request(connection_t * client_data) {
+    int retval = del_file(client_data->filename);
+    if (retval == -1) {
+        client_data->stat = ERR;
+    }
+
+    client_data->stat = RES_HEADER;
+    
+}
 /**-----------STATE MANAGEMENT-----------*/
 void state_switch(connection_t * client_data) {
     switch(client_data->stat) {
@@ -723,6 +859,7 @@ void state_switch(connection_t * client_data) {
                 parse_fs(client_data);
                 break;
             case DEL_FILE:
+                handle_del_request(client_data);
                 break;
             case DATA_READ:
                 handle_put_request(client_data);
@@ -734,6 +871,11 @@ void state_switch(connection_t * client_data) {
                 send_fs(client_data);
                 break;
             case DATA_WRITE:
+                if (client_data->method == GET) {
+                    handle_get_request(client_data);
+                } else if (client_data->method == LIST) {
+                    handle_list_request(client_data);
+                }
                 break;
             case ERR_REQ:
                 send_err(client_data);

@@ -5,7 +5,7 @@
 #include "common.h"
 
 ssize_t get_filesize(int fd) {
-    if (fd <= 0) {
+    if (fd < 0) {
         LOG("no such file exists");
         return -1;
     }
